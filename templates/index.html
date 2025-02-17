@@ -1,0 +1,57 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Recipe Extractor</title>
+</head>
+<body>
+  <h1>Enter a Recipe URL</h1>
+  <form id="recipe-form">
+    <label for="recipe-url">Recipe URL:</label>
+    <input type="text" id="recipe-url" name="recipe-url" placeholder="https://example.com/recipe" required />
+    <button type="submit">Extract Recipe</button>
+  </form>
+
+  <div id="loading-message" style="display: none;">
+    <p>Extracting recipe... Please wait.</p>
+  </div>
+
+  <script>
+    const form = document.getElementById('recipe-form');
+    const loadingMessage = document.getElementById('loading-message');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      loadingMessage.style.display = 'block';
+
+      const urlInput = document.getElementById('recipe-url');
+      const recipeUrl = urlInput.value.trim();
+
+      try {
+        const response = await fetch('/extract-recipe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipeUrl })
+        });
+
+        if (!response.ok) {
+          loadingMessage.textContent = 'Error extracting recipe. Please check the URL and try again.';
+          return;
+        }
+
+        const data = await response.json();
+        // data.recipe contains the structured recipe
+        // We'll store it in sessionStorage so we can access it on the result page
+        sessionStorage.setItem('extractedRecipe', JSON.stringify(data.recipe));
+
+        // Redirect to the result page
+        window.location.href = '/result';
+      } catch (error) {
+        console.error('Error:', error);
+        loadingMessage.textContent = 'An error occurred. Check console for details.';
+      }
+    });
+  </script>
+</body>
+</html>

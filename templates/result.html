@@ -1,0 +1,95 @@
+<!-- templates/result.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Recipe Result</title>
+</head>
+<body>
+  <h1>Recipe Extraction Result</h1>
+
+  <div id="recipe-container">
+    <!-- We'll populate this with the extracted recipe data -->
+  </div>
+
+  <div>
+    <button id="generate-audio-btn" style="display: none;">Generate Audio</button>
+  </div>
+
+  <div id="audio-container" style="margin-top: 20px; display: none;">
+    <h2>Audio Narration:</h2>
+    <audio controls id="recipe-audio"></audio>
+  </div>
+
+  <script>
+    const recipeContainer = document.getElementById('recipe-container');
+    const generateAudioBtn = document.getElementById('generate-audio-btn');
+    const audioContainer = document.getElementById('audio-container');
+    const recipeAudio = document.getElementById('recipe-audio');
+
+    // Get the data from sessionStorage
+    let recipeData = sessionStorage.getItem('extractedRecipe');
+    if (recipeData) {
+      recipeData = JSON.parse(recipeData);
+      displayRecipe(recipeData);
+      generateAudioBtn.style.display = 'inline-block';
+    } else {
+      recipeContainer.innerHTML = '<p>No recipe data found. Go back and extract a recipe first.</p>';
+    }
+
+    function displayRecipe(recipe) {
+      const { introduction, ingredients, instructions } = recipe;
+
+      let html = '';
+
+      if (introduction) {
+        html += `<h2>Introduction</h2><p>${introduction}</p>`;
+      }
+      
+      if (Array.isArray(ingredients)) {
+        html += '<h2>Ingredients</h2><ul>';
+        ingredients.forEach(ing => {
+          html += `<li>${ing.quantity || ''} ${ing.item || ''}</li>`;
+        });
+        html += '</ul>';
+      }
+
+      if (Array.isArray(instructions)) {
+        html += '<h2>Instructions</h2><ol>';
+        instructions.forEach(step => {
+          html += `<li>${step}</li>`;
+        });
+        html += '</ol>';
+      }
+
+      recipeContainer.innerHTML = html;
+    }
+
+    generateAudioBtn.addEventListener('click', async () => {
+      // Call /generate-audio with the recipe data
+      try {
+        const response = await fetch('/generate-audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(recipeData)
+        });
+
+        if (!response.ok) {
+          alert('Error generating audio');
+          return;
+        }
+
+        // Since /generate-audio returns an MP3 file, we can get a blob from it:
+        const blob = await response.blob();
+        const audioURL = URL.createObjectURL(blob);
+
+        // Set the audio player's source to this URL
+        recipeAudio.src = audioURL;
+        audioContainer.style.display = 'block';
+      } catch (err) {
+        console.error('Audio generation error:', err);
+      }
+    });
+  </script>
+</body>
+</html>

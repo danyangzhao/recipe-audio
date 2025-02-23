@@ -11,8 +11,8 @@ bind = f"0.0.0.0:{port}"
 # Using the recommended formula: CPU cores * 2 + 1
 workers = multiprocessing.cpu_count() * 2 + 1
 
-# Worker type - using Gevent for async support
-worker_class = "gevent"
+# Use sync worker instead of gevent
+worker_class = "sync"
 
 # Maximum number of simultaneous clients
 worker_connections = 1000

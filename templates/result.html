@@ -66,28 +66,48 @@
     }
 
     generateAudioBtn.addEventListener('click', async () => {
-      // Call /generate-audio with the recipe data
+      // Format recipe data into a single text string
+      const recipe = JSON.parse(sessionStorage.getItem('extractedRecipe'));
+      let audioText = '';
+      
+      if (recipe.introduction) {
+        audioText += recipe.introduction + '\n\n';
+      }
+      
+      if (Array.isArray(recipe.ingredients)) {
+        audioText += 'Ingredients:\n';
+        recipe.ingredients.forEach(ing => {
+          audioText += `${ing.quantity || ''} ${ing.item || ''}\n`;
+        });
+        audioText += '\n';
+      }
+      
+      if (Array.isArray(recipe.instructions)) {
+        audioText += 'Instructions:\n';
+        recipe.instructions.forEach((step, index) => {
+          audioText += `Step ${index + 1}: ${step}\n`;
+        });
+      }
+
       try {
         const response = await fetch('/generate-audio', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(recipeData)
+          body: JSON.stringify({ text: audioText })
         });
 
         if (!response.ok) {
-          alert('Error generating audio');
-          return;
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Error generating audio');
         }
 
-        // Since /generate-audio returns an MP3 file, we can get a blob from it:
         const blob = await response.blob();
         const audioURL = URL.createObjectURL(blob);
-
-        // Set the audio player's source to this URL
         recipeAudio.src = audioURL;
         audioContainer.style.display = 'block';
       } catch (err) {
         console.error('Audio generation error:', err);
+        alert(err.message);
       }
     });
   </script>

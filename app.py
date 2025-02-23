@@ -60,10 +60,14 @@ def extract_recipe():
 def generate_audio():
     try:
         data = request.get_json()
-        text = data.get('text', '')
+        text = data.get('text', '').strip()  # Strip whitespace
         
+        # Validate input
+        if not text:
+            return jsonify({'error': 'No text provided for audio generation'}), 400
+            
         # Limit text length to manage memory
-        max_length = 3000  # Limit text length
+        max_length = 3000
         if len(text) > max_length:
             text = text[:max_length] + "..."
         
@@ -71,25 +75,38 @@ def generate_audio():
             # Force garbage collection before generating audio
             gc.collect()
             
+            # Log the text length for debugging
+            print(f"Generating audio for text of length: {len(text)}")
+            
             # Generate audio with minimal settings
             response = client.audio.speech.create(
                 model="tts-1",
                 voice="alloy",
                 input=text,
-                speed=1.0  # Default speed to minimize processing
+                speed=1.0
             )
             
-            # Stream the response directly without storing in memory
+            # Stream the response directly
             def generate():
-                yield from response.iter_bytes(chunk_size=4096)
+                try:
+                    for chunk in response.iter_bytes(chunk_size=4096):
+                        if chunk:  # Ensure chunk is not empty
+                            yield chunk
+                except Exception as e:
+                    print(f"Error streaming audio: {str(e)}")
+                    yield b''  # Empty bytes to indicate error
             
             return Response(generate(), mimetype='audio/mpeg')
             
         except Exception as e:
             print(f"Error generating audio: {str(e)}")
+            error_message = str(e)
+            if 'invalid_request_error' in error_message:
+                return jsonify({'error': 'Invalid text format for audio generation'}), 400
             return jsonify({'error': 'Failed to generate audio'}), 500
             
     except Exception as e:
+        print(f"General error in generate_audio: {str(e)}")
         return jsonify({'error': str(e)}), 500
     finally:
         # Force cleanup

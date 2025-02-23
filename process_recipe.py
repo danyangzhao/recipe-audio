@@ -20,7 +20,7 @@ def parse_and_structure_recipe(raw_text: str) -> dict:
 
     1) "introduction": A very short introduction (1-2 sentences).
     2) "ingredients": An array of objects with {{"quantity": "", "item": ""}}.
-    3) "instructions": A step-by-step array. For each step, mention which ingredients (and quantities) are involved.
+    3) "instructions": An array of steps. Do not prefix with "Step X:" - just include the instruction text.
 
     Return valid JSON with this structure:
     {{
@@ -29,7 +29,8 @@ def parse_and_structure_recipe(raw_text: str) -> dict:
         {{"quantity": "1 tsp", "item": "salt"}}
       ],
       "instructions": [
-        "Step 1: ..."
+        "Mix salt with other ingredients",
+        "Cook for 30 minutes"
       ]
     }}
 

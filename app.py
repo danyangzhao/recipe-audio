@@ -7,8 +7,22 @@ from tts import generate_audio_from_text  # or use the google TTS function
 import os
 import io
 import time
+from dotenv import load_dotenv
+from openai import OpenAI
 
 app = Flask(__name__)
+
+# Load environment variables from .env file (for local development)
+load_dotenv()
+
+# Get the API key from environment variables
+openai_api_key = os.getenv('OPENAI_API_KEY')
+
+if not openai_api_key:
+    raise ValueError("No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
+
+# Configure your OpenAI client
+client = OpenAI(api_key=openai_api_key)
 
 @app.route('/')
 def index():

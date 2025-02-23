@@ -5,7 +5,7 @@ __pycache__/
 # Ignore environment variables file
 .env
 
-# Ignore uploads or data files if you don’t want them in your repo
+# Ignore uploads or data files if you don't want them in your repo
 uploads/
 
 # Etc...

@@ -1,3 +1,199 @@
 /* in <head> of your HTML */
 <link rel="stylesheet" href="/static/style.css" />
 
+/* Base styles and variables */
+:root {
+  --primary-color: #2c3e50;
+  --secondary-color: #e74c3c;
+  --background-color: #f5f6fa;
+  --text-color: #2c3e50;
+  --border-radius: 8px;
+  --box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1.6;
+  color: var(--text-color);
+  background-color: var(--background-color);
+  padding: 20px;
+}
+
+/* Container styles */
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Header styles */
+h1 {
+  color: var(--primary-color);
+  margin-bottom: 1.5rem;
+  font-size: 2.5rem;
+  text-align: center;
+}
+
+h2 {
+  color: var(--primary-color);
+  margin: 1.5rem 0 1rem;
+  font-size: 1.8rem;
+}
+
+/* Form styles */
+.form-container {
+  background: white;
+  padding: 2rem;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+  margin-bottom: 2rem;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+input[type="text"], input[type="url"] {
+  width: 100%;
+  padding: 0.8rem;
+  border: 2px solid #ddd;
+  border-radius: var(--border-radius);
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
+}
+
+input[type="text"]:focus, input[type="url"]:focus {
+  border-color: var(--primary-color);
+  outline: none;
+}
+
+/* Button styles */
+.btn {
+  display: inline-block;
+  padding: 0.8rem 1.5rem;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.3s ease;
+  text-align: center;
+  min-width: 200px;
+}
+
+.btn:hover {
+  background-color: #34495e;
+}
+
+/* Recipe display styles */
+.recipe-container {
+  background: white;
+  padding: 2rem;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+}
+
+.ingredients-list {
+  list-style: none;
+  margin-bottom: 1.5rem;
+}
+
+.ingredients-list li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.steps-list {
+  padding-left: 1.2rem;
+}
+
+.steps-list li {
+  margin-bottom: 1rem;
+}
+
+/* Audio player styles */
+.audio-container {
+  margin-top: 2rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: var(--border-radius);
+}
+
+.audio-player {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+/* Loading indicator */
+.loading-indicator {
+  text-align: center;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: var(--border-radius);
+  color: var(--primary-color);
+  border: 1px solid #e9ecef;
+}
+
+.loading-indicator p {
+  margin: 0;
+  color: var(--primary-color);
+}
+
+/* Remove the spinning animation classes */
+.loading {
+  text-align: center;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: var(--border-radius);
+  color: var(--primary-color);
+  border: 1px solid #e9ecef;
+}
+
+/* Download container styles */
+.download-container {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.download-btn {
+  display: inline-block;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  body {
+    padding: 10px;
+  }
+  
+  .container {
+    padding: 10px;
+  }
+  
+  h1 {
+    font-size: 2rem;
+  }
+  
+  .form-container, .recipe-container {
+    padding: 1rem;
+  }
+  
+  .btn {
+    width: 100%;
+    min-width: unset;
+    padding: 1rem 1.5rem;
+  }
+}
+

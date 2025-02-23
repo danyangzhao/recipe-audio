@@ -3,55 +3,170 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Recipe Extractor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recipe Audio Generator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .form-container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 0.8rem;
+      margin-bottom: 1rem;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 0.8rem 1.5rem;
+      background-color: #2c3e50;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background-color 0.3s ease;
+      width: auto;
+      margin-top: 1rem;
+      min-width: 120px;
+    }
+
+    .btn:hover {
+      background-color: #34495e;
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #f8f9fa;
+      border-radius: 8px;
+      color: #2c3e50;
+    }
+
+    .button-container {
+      text-align: center;
+    }
+  </style>
 </head>
 <body>
-  <h1>Enter a Recipe URL</h1>
-  <form id="recipe-form">
-    <label for="recipe-url">Recipe URL:</label>
-    <input type="text" id="recipe-url" name="recipe-url" placeholder="https://example.com/recipe" required />
-    <button type="submit">Extract Recipe</button>
-  </form>
+  <div class="container">
+    <h1>Recipe Audio Generator</h1>
+    
+    <div class="form-container">
+      <form id="recipe-form">
+        <div class="form-group">
+          <label for="recipe-url">Recipe URL:</label>
+          <input 
+            type="url" 
+            id="recipe-url" 
+            name="recipe-url"
+            class="input-field"
+            placeholder="https://example.com/recipe" 
+            required 
+          />
+          <div class="button-container">
+            <button type="submit" class="btn">Extract Recipe</button>
+          </div>
+        </div>
+      </form>
+      <div id="loading-message" class="loading">
+        Extracting recipe...
+      </div>
+    </div>
 
-  <div id="loading-message" style="display: none;">
-    <p>Extracting recipe... Please wait.</p>
+    <div class="button-container" style="margin-top: 2rem; text-align: center;">
+      <button id="generate-audio" class="btn" style="display: none;">Generate Audio</button>
+    </div>
   </div>
 
   <script>
-    const form = document.getElementById('recipe-form');
-    const loadingMessage = document.getElementById('loading-message');
+    document.addEventListener('DOMContentLoaded', function() {
+      const form = document.getElementById('recipe-form');
+      const loadingMessage = document.getElementById('loading-message');
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      loadingMessage.style.display = 'block';
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        loadingMessage.style.display = 'block';
 
-      const urlInput = document.getElementById('recipe-url');
-      const recipeUrl = urlInput.value.trim();
+        const urlInput = document.getElementById('recipe-url');
+        const recipeUrl = urlInput.value.trim();
 
-      try {
-        const response = await fetch('/extract-recipe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ recipeUrl })
-        });
+        try {
+          const response = await fetch('/extract-recipe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recipeUrl })
+          });
 
-        if (!response.ok) {
-          loadingMessage.textContent = 'Error extracting recipe. Please check the URL and try again.';
-          return;
+          if (!response.ok) {
+            loadingMessage.textContent = 'Error extracting recipe. Please check the URL and try again.';
+            return;
+          }
+
+          const data = await response.json();
+          console.log('Recipe data received:', data); // Debug log
+          sessionStorage.setItem('extractedRecipe', JSON.stringify(data.recipe));
+          console.log('Recipe data stored:', sessionStorage.getItem('extractedRecipe')); // Debug log
+          window.location.href = '/result';
+        } catch (error) {
+          console.error('Error:', error);
+          loadingMessage.textContent = 'An error occurred. Please try again.';
         }
-
-        const data = await response.json();
-        // data.recipe contains the structured recipe
-        // We'll store it in sessionStorage so we can access it on the result page
-        sessionStorage.setItem('extractedRecipe', JSON.stringify(data.recipe));
-
-        // Redirect to the result page
-        window.location.href = '/result';
-      } catch (error) {
-        console.error('Error:', error);
-        loadingMessage.textContent = 'An error occurred. Check console for details.';
-      }
+      });
     });
+
+    // Get the data from sessionStorage
+    let recipeData = sessionStorage.getItem('extractedRecipe');
+    console.log('Recipe data:', recipeData);
+
+    if (recipeData) {
+      recipeData = JSON.parse(recipeData);
+      console.log('Parsed recipe:', recipeData);
+      displayRecipe(recipeData);
+      console.log('Button before:', generateAudioBtn.style.display);
+      generateAudioBtn.style.display = 'inline-block';
+      console.log('Button after:', generateAudioBtn.style.display);
+    } else {
+      console.log('No recipe data found');
+      recipeContainer.innerHTML = '<p>No recipe data found. Go back and extract a recipe first.</p>';
+    }
+
+    // Add this right after your form submit handler
+    async function testExtraction() {
+        try {
+            const testUrl = 'https://www.allrecipes.com/recipe/158968/spinach-and-feta-turkey-burgers/';
+            const response = await fetch('/extract-recipe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recipeUrl: testUrl })
+            });
+
+            const data = await response.json();
+            console.log('Test extraction response:', data);
+            
+            if (data.recipe) {
+                sessionStorage.setItem('extractedRecipe', JSON.stringify(data.recipe));
+                console.log('Test data stored in sessionStorage:', sessionStorage.getItem('extractedRecipe'));
+            }
+        } catch (error) {
+            console.error('Test extraction failed:', error);
+        }
+    }
+
+    // Call the test function when the page loads
+    document.addEventListener('DOMContentLoaded', testExtraction);
   </script>
 </body>
 </html>

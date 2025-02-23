@@ -34,7 +34,14 @@ def index():
 @app.route('/result')
 def result():
     """Serve the result page that displays the recipe and audio controls"""
-    return render_template('result.html')
+    # Initialize with empty recipe structure
+    empty_recipe = {
+        "title": "",
+        "introduction": "",
+        "ingredients": [],
+        "instructions": []
+    }
+    return render_template('result.html', recipe=empty_recipe)
 
 @app.route('/extract-recipe', methods=['POST'])
 def extract_recipe():
@@ -47,14 +54,19 @@ def extract_recipe():
     if not recipe_url:
         return jsonify({"error": "No recipeUrl provided"}), 400
 
-    # 1. Scrape the webpage
-    raw_text = scrape_recipe_page(recipe_url)
+    try:
+        # 1. Scrape the webpage
+        raw_text = scrape_recipe_page(recipe_url)
+        print("Scraped text:", raw_text[:200])  # Print first 200 chars
 
-    # 2. Parse & structure with OpenAI
-    structured_recipe = parse_and_structure_recipe(raw_text)
+        # 2. Parse & structure with OpenAI
+        structured_recipe = parse_and_structure_recipe(raw_text)
+        print("Structured recipe:", structured_recipe)  # Print the structured data
 
-    return jsonify({"recipe": structured_recipe})
-
+        return jsonify({"recipe": structured_recipe})
+    except Exception as e:
+        print(f"Error in extract_recipe: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/generate-audio', methods=['POST'])
 def generate_audio():
@@ -67,7 +79,7 @@ def generate_audio():
             return jsonify({'error': 'No text provided for audio generation'}), 400
             
         # Limit text length to manage memory
-        max_length = 3000
+        max_length = 10000
         if len(text) > max_length:
             text = text[:max_length] + "..."
         
@@ -114,15 +126,8 @@ def generate_audio():
 
 @app.route('/results')
 def results():
-    # Assuming recipe_data is stored in a session or passed as a parameter
-    recipe_data = {
-        "title": "Recipe Title",
-        "description": "Recipe description...",
-        "ingredients": ["ingredient 1", "ingredient 2", ...],
-        "instructions": ["step 1", "step 2", ...],
-        "notes": "Optional notes..."
-    }
-    return render_template('results.html', recipe=recipe_data)
+    # Delete this entire route as we're not using it anymore
+    pass
 
 if __name__ == '__main__':
     # For local dev only

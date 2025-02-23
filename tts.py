@@ -1,6 +1,10 @@
 # tts.py
 from openai import OpenAI
 import os
+from dotenv import load_dotenv
+
+# Load environment variables first
+load_dotenv()
 
 def generate_audio_from_text(text: str) -> bytes:
     """
@@ -15,7 +19,7 @@ def generate_audio_from_text(text: str) -> bytes:
     print(f"Generating audio for text ({len(text)} chars):")
     print(f"Text preview: {text[:200]}...")  # Print first 200 chars
     
-    client = OpenAI()  # Automatically uses OPENAI_API_KEY from environment
+    client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
     # Generate speech using OpenAI's TTS API
     response = client.audio.speech.create(

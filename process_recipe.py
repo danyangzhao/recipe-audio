@@ -2,12 +2,18 @@
 import json
 from openai import OpenAI
 import os
+from dotenv import load_dotenv
 
-# Make sure you have set your OpenAI API key:
-# export OPENAI_API_KEY="sk-XXXX..."
+# Load environment variables first
+load_dotenv()
 
-# Initialize the client
-client = OpenAI()  # This automatically uses your OPENAI_API_KEY environment variable
+# Get API key
+api_key = os.getenv('OPENAI_API_KEY')
+if not api_key:
+    raise ValueError("No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
+
+# Initialize the client with the API key
+client = OpenAI(api_key=api_key)
 
 def parse_and_structure_recipe(raw_text: str) -> dict:
     """
@@ -20,17 +26,18 @@ def parse_and_structure_recipe(raw_text: str) -> dict:
 
     1) "introduction": A very short introduction (1-2 sentences).
     2) "ingredients": An array of objects with {{"quantity": "", "item": ""}}.
-    3) "instructions": An array of steps. Do not prefix with "Step X:" - just include the instruction text.
+    3) "instructions": An array of steps. IMPORTANT: Each instruction step must include the specific quantities from the ingredients list when that ingredient is first used. For example, if an ingredient is "2 cups flour", the instruction should say "Add 2 cups of flour" not just "Add flour".
 
     Return valid JSON with this structure:
     {{
       "introduction": "string",
       "ingredients": [
+        {{"quantity": "2 cups", "item": "flour"}},
         {{"quantity": "1 tsp", "item": "salt"}}
       ],
       "instructions": [
-        "Mix salt with other ingredients",
-        "Cook for 30 minutes"
+        "In a large bowl, mix 2 cups of flour with 1 tsp salt",
+        "Knead the dough for 10 minutes"
       ]
     }}
 

@@ -2,113 +2,183 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Recipe Result</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recipe Details</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .btn {
+      display: inline-block;
+      padding: 0.8rem 1.5rem;
+      background-color: #2c3e50;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background-color 0.3s ease;
+    }
+
+    .btn:hover {
+      background-color: #34495e;
+    }
+  </style>
 </head>
 <body>
-  <h1>Recipe Extraction Result</h1>
+  <div class="container">
+    <div id="recipe-container" class="recipe-container">
+      <!-- Recipe content will be inserted here -->
+    </div>
 
-  <div id="recipe-container">
-    <!-- We'll populate this with the extracted recipe data -->
-  </div>
+    <div class="button-container" style="margin-top: 2rem; text-align: center;">
+      <button id="generate-audio" class="btn">Generate Audio</button>
+    </div>
 
-  <div>
-    <button id="generate-audio-btn" style="display: none;">Generate Audio</button>
-  </div>
-
-  <div id="audio-container" style="margin-top: 20px; display: none;">
-    <h2>Audio Narration:</h2>
-    <audio controls id="recipe-audio"></audio>
+    <div id="audio-container" class="audio-container" style="display: none;">
+      <h2>Audio Version</h2>
+      <audio id="recipe-audio" class="audio-player" controls>
+        Your browser does not support the audio element.
+      </audio>
+      <div class="download-container">
+        <button id="download-audio" class="btn download-btn">
+          Download Audio
+        </button>
+      </div>
+    </div>
   </div>
 
   <script>
-    const recipeContainer = document.getElementById('recipe-container');
-    const generateAudioBtn = document.getElementById('generate-audio-btn');
-    const audioContainer = document.getElementById('audio-container');
-    const recipeAudio = document.getElementById('recipe-audio');
+    document.addEventListener('DOMContentLoaded', function() {
+      const recipeContainer = document.getElementById('recipe-container');
+      const generateAudioBtn = document.getElementById('generate-audio');
+      const audioContainer = document.getElementById('audio-container');
+      const recipeAudio = document.getElementById('recipe-audio');
 
-    // Get the data from sessionStorage
-    let recipeData = sessionStorage.getItem('extractedRecipe');
-    if (recipeData) {
-      recipeData = JSON.parse(recipeData);
-      displayRecipe(recipeData);
-      generateAudioBtn.style.display = 'inline-block';
-    } else {
-      recipeContainer.innerHTML = '<p>No recipe data found. Go back and extract a recipe first.</p>';
-    }
+      // Get recipe data from sessionStorage
+      const recipeData = sessionStorage.getItem('extractedRecipe');
+      console.log('Recipe data from storage:', recipeData);
 
-    function displayRecipe(recipe) {
-      const { introduction, ingredients, instructions } = recipe;
+      if (recipeData) {
+        try {
+          const recipe = JSON.parse(recipeData);
+          console.log('Parsed recipe:', recipe);
 
-      let html = '';
+          // Display recipe
+          let html = '';
+          
+          if (recipe.title) {
+            html += `<h1>${recipe.title}</h1>`;
+          }
 
-      if (introduction) {
-        html += `<h2>Introduction</h2><p>${introduction}</p>`;
-      }
-      
-      if (Array.isArray(ingredients)) {
-        html += '<h2>Ingredients</h2><ul>';
-        ingredients.forEach(ing => {
-          html += `<li>${ing.quantity || ''} ${ing.item || ''}</li>`;
-        });
-        html += '</ul>';
-      }
+          if (recipe.introduction) {
+            html += `<h2>Introduction</h2>
+                    <div class="introduction"><p>${recipe.introduction}</p></div>`;
+          }
+          
+          if (Array.isArray(recipe.ingredients)) {
+            html += '<h2>Ingredients</h2><ul class="ingredients-list">';
+            recipe.ingredients.forEach(ing => {
+              html += `<li><span class="quantity">${ing.quantity || ''}</span> <span class="item">${ing.item || ''}</span></li>`;
+            });
+            html += '</ul>';
+          }
 
-      if (Array.isArray(instructions)) {
-        html += '<h2>Instructions</h2><ol>';
-        instructions.forEach(step => {
-          html += `<li>${step}</li>`;
-        });
-        html += '</ol>';
-      }
+          if (Array.isArray(recipe.instructions)) {
+            html += '<h2>Instructions</h2><ol class="steps-list">';
+            recipe.instructions.forEach(step => {
+              html += `<li>${step}</li>`;
+            });
+            html += '</ol>';
+          }
 
-      recipeContainer.innerHTML = html;
-    }
-
-    generateAudioBtn.addEventListener('click', async () => {
-      // Format recipe data into a single text string
-      const recipe = JSON.parse(sessionStorage.getItem('extractedRecipe'));
-      let audioText = '';
-      
-      if (recipe.introduction) {
-        audioText += recipe.introduction + '\n\n';
-      }
-      
-      if (Array.isArray(recipe.ingredients)) {
-        audioText += 'Ingredients:\n';
-        recipe.ingredients.forEach(ing => {
-          audioText += `${ing.quantity || ''} ${ing.item || ''}\n`;
-        });
-        audioText += '\n';
-      }
-      
-      if (Array.isArray(recipe.instructions)) {
-        audioText += 'Instructions:\n';
-        recipe.instructions.forEach((step, index) => {
-          audioText += `Step ${index + 1}: ${step}\n`;
-        });
-      }
-
-      try {
-        const response = await fetch('/generate-audio', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: audioText })
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Error generating audio');
+          recipeContainer.innerHTML = html;
+        } catch (error) {
+          console.error('Error parsing recipe:', error);
+          recipeContainer.innerHTML = '<p>Error parsing recipe data. Please try again.</p>';
         }
-
-        const blob = await response.blob();
-        const audioURL = URL.createObjectURL(blob);
-        recipeAudio.src = audioURL;
-        audioContainer.style.display = 'block';
-      } catch (err) {
-        console.error('Audio generation error:', err);
-        alert(err.message);
+      } else {
+        recipeContainer.innerHTML = '<p>No recipe data found. Please go back and extract a recipe first.</p>';
       }
+
+      // Add click handler for generate audio button
+      generateAudioBtn.addEventListener('click', async () => {
+        try {
+          // Show loading state
+          generateAudioBtn.disabled = true;
+          generateAudioBtn.textContent = 'Generating Audio...';
+          audioContainer.style.display = 'block';
+          audioContainer.innerHTML = `
+            <h2>Audio Version</h2>
+            <div class="loading-indicator">
+              <p>Please wait while we generate the audio version of your recipe. This may take up to a minute...</p>
+            </div>
+          `;
+
+          const recipe = JSON.parse(sessionStorage.getItem('extractedRecipe'));
+          let audioText = '';
+          
+          if (recipe.introduction) {
+            audioText += recipe.introduction + '\n\n';
+          }
+          
+          if (Array.isArray(recipe.ingredients)) {
+            audioText += 'Ingredients:\n';
+            recipe.ingredients.forEach(ing => {
+              audioText += `${ing.quantity || ''} ${ing.item || ''}\n`;
+            });
+            audioText += '\n';
+          }
+          
+          if (Array.isArray(recipe.instructions)) {
+            audioText += 'Instructions:\n';
+            recipe.instructions.forEach((step, index) => {
+              audioText += `Step ${index + 1}: ${step}\n`;
+            });
+          }
+
+          const response = await fetch('/generate-audio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: audioText })
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to generate audio');
+          }
+
+          const blob = await response.blob();
+          const audioURL = URL.createObjectURL(blob);
+          
+          // Restore the audio container with the player and download button
+          audioContainer.innerHTML = `
+            <h2>Audio Version</h2>
+            <audio id="recipe-audio" class="audio-player" controls>
+              Your browser does not support the audio element.
+            </audio>
+            <div class="download-container">
+              <button id="download-audio" class="btn download-btn">
+                Download Audio
+              </button>
+            </div>
+          `;
+          
+          const audioElement = document.getElementById('recipe-audio');
+          audioElement.src = audioURL;
+          
+          // Add download button functionality
+          document.getElementById('download-audio').addEventListener('click', () => {
+            const a = document.createElement('a');
+            a.href = audioURL;
+            a.download = 'recipe-audio.mp3';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+          });
+        } catch (error) {
+          console.error('Error generating audio:', error);
+          alert('Failed to generate audio. Please try again.');
+        }
+      });
     });
   </script>
 </body>

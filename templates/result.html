@@ -32,6 +32,9 @@
 
     <div class="button-container" style="margin-top: 2rem; text-align: center;">
       <button id="generate-audio" class="btn">Generate Audio</button>
+      <div id="audio-status" class="status-indicator" style="display: none;">
+        Audio Ready
+      </div>
     </div>
 
     <div id="audio-container" class="audio-container" style="display: none;">
@@ -110,7 +113,7 @@
           audioContainer.innerHTML = `
             <h2>Audio Version</h2>
             <div class="loading-indicator">
-              <p>Please wait while we generate the audio version of your recipe. This may take up to a minute...</p>
+              <p>Please wait while we generate the audio version of your recipe. This may take up to 3 minutes...</p>
             </div>
           `;
 
@@ -164,6 +167,11 @@
           
           const audioElement = document.getElementById('recipe-audio');
           audioElement.src = audioURL;
+          
+          // Reset generate audio button and show status
+          generateAudioBtn.style.display = 'none';  // Hide the button
+          const audioStatus = document.getElementById('audio-status');
+          audioStatus.style.display = 'block';  // Show the status indicator
           
           // Add download button functionality
           document.getElementById('download-audio').addEventListener('click', () => {

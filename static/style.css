@@ -197,3 +197,16 @@ input[type="text"]:focus, input[type="url"]:focus {
   }
 }
 
+/* Add this new class */
+.status-indicator {
+  text-align: center;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: var(--border-radius);
+  color: var(--primary-color);
+  border: 1px solid #e9ecef;
+  margin-top: 1rem;
+  cursor: default;
+  pointer-events: none;
+}
+

@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template, Response
 from scrape import scrape_recipe_page
 from process_recipe import parse_and_structure_recipe
 from tts import generate_audio_from_text  # or use the google TTS function
@@ -9,6 +9,8 @@ import io
 import time
 from dotenv import load_dotenv
 from openai import OpenAI
+import tempfile
+import gc  # For garbage collection
 
 app = Flask(__name__)
 
@@ -58,34 +60,40 @@ def extract_recipe():
 def generate_audio():
     try:
         data = request.get_json()
+        text = data.get('text', '')
         
-        # Set a reasonable timeout for the OpenAI API call
-        client.timeout = 60
+        # Limit text length to manage memory
+        max_length = 3000  # Limit text length
+        if len(text) > max_length:
+            text = text[:max_length] + "..."
         
-        # Generate in smaller chunks if possible
-        def generate():
-            # Send initial response to keep connection alive
-            yield "Processing started...\n"
+        try:
+            # Force garbage collection before generating audio
+            gc.collect()
             
-            try:
-                response = client.audio.speech.create(
-                    model="tts-1",
-                    voice="alloy",
-                    input=data.get('text', '')
-                )
-                
-                # Stream the response in chunks
-                for chunk in response.iter_bytes(chunk_size=8192):
-                    yield chunk
-                    
-            except Exception as e:
-                print(f"Error generating audio: {str(e)}")
-                yield str(e)
-        
-        return Response(generate(), mimetype='audio/mpeg')
-        
+            # Generate audio with minimal settings
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice="alloy",
+                input=text,
+                speed=1.0  # Default speed to minimize processing
+            )
+            
+            # Stream the response directly without storing in memory
+            def generate():
+                yield from response.iter_bytes(chunk_size=4096)
+            
+            return Response(generate(), mimetype='audio/mpeg')
+            
+        except Exception as e:
+            print(f"Error generating audio: {str(e)}")
+            return jsonify({'error': 'Failed to generate audio'}), 500
+            
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        # Force cleanup
+        gc.collect()
 
 @app.route('/results')
 def results():

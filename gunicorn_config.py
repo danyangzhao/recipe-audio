@@ -1,7 +1,11 @@
 import multiprocessing
+import os
 
-# Bind to 0.0.0.0:$PORT - Heroku will set the PORT environment variable
-bind = "0.0.0.0:${PORT}"
+# Get the PORT from environment variable
+port = os.getenv('PORT', '8000')
+
+# Bind to 0.0.0.0:$PORT
+bind = f"0.0.0.0:{port}"
 
 # Number of worker processes
 # Using the recommended formula: CPU cores * 2 + 1

@@ -46,29 +46,8 @@
             {% endif %}
         </div>
 
-        <div id="audio-container" class="audio-container" style="display: {% if recipe.audio_filename %}block{% else %}none{% endif %};">
-            {% if recipe.audio_filename %}
-                <h2>Audio Version</h2>
-                <audio id="recipe-audio" class="audio-player" controls>
-                    <source src="{{ url_for('static', filename='audio/' + recipe.audio_filename) }}" type="audio/mpeg">
-                    Your browser does not support the audio element.
-                </audio>
-                <div class="download-container">
-                    <a href="{{ url_for('static', filename='audio/' + recipe.audio_filename) }}" 
-                       download="recipe_{{ recipe.id }}.mp3" 
-                       class="btn download-btn">
-                        Download Audio
-                    </a>
-                </div>
-            {% else %}
-                <div class="button-container">
-                    <button id="generate-audio" class="btn">Generate Audio</button>
-                    <div id="audio-status" class="status-indicator" style="display: none;">
-                        Audio Ready
-                    </div>
-                </div>
-            {% endif %}
-        </div>
+        <div id="audio-container" style="display: none;"></div>
+        <div id="audio-status" style="display: none;"></div>
     </div>
 
     <script>
@@ -119,15 +98,26 @@
                     throw new Error('Failed to generate audio');
                 }
 
-                // Show audio status
+                const data = await response.json();
+
+                // Show audio status and player
                 const audioStatus = document.getElementById('audio-status');
                 audioStatus.style.display = 'block';
                 audioStatus.textContent = 'Audio Ready';
 
-                // Reload the page after a short delay
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1500);
+                // Display audio player with S3 URL
+                const audioContainer = document.getElementById('audio-container');
+                audioContainer.style.display = 'block';
+                audioContainer.innerHTML = `
+                    <audio controls style="width: 100%; margin-top: 1rem;">
+                        <source src="${data.audio_url}" type="audio/mpeg">
+                        Your browser does not support the audio element.
+                    </audio>
+                `;
+
+                // Re-enable button
+                generateAudioBtn.textContent = 'Generate Audio';
+                generateAudioBtn.disabled = false;
 
             } catch (error) {
                 console.error('Error generating audio:', error);

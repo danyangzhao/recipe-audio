@@ -114,12 +114,12 @@
           audioStatus.style.display = 'block';
           audioStatus.textContent = 'Audio Ready';
 
-          // Display audio player
+          // Display audio player with S3 URL
           const audioContainer = document.getElementById('audio-container');
           audioContainer.style.display = 'block';
           audioContainer.innerHTML = `
             <audio controls style="width: 100%; margin-top: 1rem;">
-              <source src="/audio/${recipe.id}" type="audio/mpeg">
+              <source src="${data.audio_url}" type="audio/mpeg">
               Your browser does not support the audio element.
             </audio>
           `;

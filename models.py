@@ -11,5 +11,6 @@ class Recipe(db.Model):
     ingredients = db.Column(db.JSON)
     instructions = db.Column(db.JSON)
     audio_filename = db.Column(db.String(500))
+    audio_url = db.Column(db.String(500))
     views = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow) 

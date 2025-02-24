@@ -46,8 +46,23 @@
             {% endif %}
         </div>
 
-        <div id="audio-container" style="display: none;"></div>
-        <div id="audio-status" style="display: none;"></div>
+        <div class="button-container" style="margin-top: 2rem; text-align: center;">
+            {% if not recipe.audio_filename %}
+                <button id="generate-audio" class="btn">Generate Audio</button>
+            {% endif %}
+        </div>
+
+        {% if recipe.audio_filename %}
+            <div id="audio-container" style="display: block; margin-top: 2rem;">
+                <audio controls style="width: 100%;">
+                    <source src="{{ recipe.audio_url }}" type="audio/mpeg">
+                    Your browser does not support the audio element.
+                </audio>
+            </div>
+        {% else %}
+            <div id="audio-container" style="display: none;"></div>
+            <div id="audio-status" style="display: none;"></div>
+        {% endif %}
     </div>
 
     <script>

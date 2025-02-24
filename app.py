@@ -30,16 +30,23 @@ if not openai_api_key:
 # Configure your OpenAI client
 client = OpenAI(api_key=openai_api_key)
 
-# Add after app initialization
+# Database configuration
 DATABASE_URL = os.getenv('DATABASE_URL')
 if DATABASE_URL:
     # Handle Heroku's "postgres://" vs "postgresql://" difference
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_size': 1,
+        'max_overflow': 2,
+        'pool_timeout': 30,
+        'pool_recycle': 1800,
+    }
 else:
     # Fallback for local development
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///recipes.db'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 

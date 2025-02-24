@@ -7,5 +7,6 @@ __pycache__/
 
 # Ignore uploads or data files if you don't want them in your repo
 uploads/
+static/audio/
 
 # Etc...

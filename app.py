@@ -79,7 +79,8 @@ def view_recipe(recipe_id):
         "instructions": recipe.instructions,
         "id": recipe.id,
         "audio_filename": recipe.audio_filename,
-        "audio_url": recipe.audio_url
+        "audio_url": recipe.audio_url,
+        "views": recipe.views
     }
     
     return render_template('stored_recipe.html', recipe=recipe_dict)

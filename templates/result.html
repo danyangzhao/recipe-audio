@@ -124,7 +124,10 @@
             </audio>
           `;
 
-          // Re-enable button
+          // Hide the generate button after successful generation
+          generateAudioBtn.style.display = 'none';
+
+          // Re-enable button (in case we need it later)
           generateAudioBtn.textContent = 'Generate Audio';
           generateAudioBtn.disabled = false;
 

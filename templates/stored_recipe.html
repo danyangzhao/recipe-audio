@@ -54,6 +54,11 @@
 
         {% if recipe.audio_filename %}
             <div id="audio-container" style="display: block; margin-top: 2rem;">
+                <!-- Debug info -->
+                <div style="display: none;">
+                    <p>Audio filename: {{ recipe.audio_filename }}</p>
+                    <p>Audio URL: {{ recipe.audio_url }}</p>
+                </div>
                 <audio controls style="width: 100%;">
                     <source src="{{ recipe.audio_url }}" type="audio/mpeg">
                     Your browser does not support the audio element.

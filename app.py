@@ -3,6 +3,8 @@ from flask import Flask, request, jsonify, send_file, render_template, Response
 from scrape import scrape_recipe_page
 from process_recipe import parse_and_structure_recipe
 from tts import generate_audio_from_text  # or use the google TTS function
+from models import db, Recipe
+from flask import url_for
 
 import os
 import io
@@ -26,103 +28,150 @@ if not openai_api_key:
 # Configure your OpenAI client
 client = OpenAI(api_key=openai_api_key)
 
+# Add after app initialization
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///recipes.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db.init_app(app)
+
+# Create audio storage directory
+AUDIO_FOLDER = 'static/audio'
+if not os.path.exists(AUDIO_FOLDER):
+    os.makedirs(AUDIO_FOLDER)
+
 @app.route('/')
 def index():
-    """Serve the main page with the URL input form"""
-    return render_template('index.html')
+    """Serve the main page with popular recipes"""
+    popular_recipes = Recipe.query.order_by(Recipe.views.desc()).limit(5).all()
+    return render_template('index.html', popular_recipes=popular_recipes)
+
+@app.route('/recipe/<int:recipe_id>')
+def view_recipe(recipe_id):
+    recipe = db.session.get(Recipe, recipe_id)
+    if not recipe:
+        abort(404)
+    recipe.views += 1
+    db.session.commit()
+    
+    # Convert recipe to dictionary before passing to template
+    recipe_dict = {
+        "title": recipe.title,
+        "introduction": recipe.introduction,
+        "ingredients": recipe.ingredients,
+        "instructions": recipe.instructions,
+        "id": recipe.id,
+        "audio_filename": recipe.audio_filename
+    }
+    
+    return render_template('stored_recipe.html', recipe=recipe_dict)
 
 @app.route('/result')
 def result():
     """Serve the result page that displays the recipe and audio controls"""
-    # Initialize with empty recipe structure
-    empty_recipe = {
-        "title": "",
-        "introduction": "",
-        "ingredients": [],
-        "instructions": []
-    }
-    return render_template('result.html', recipe=empty_recipe)
+    return render_template('result.html')
 
 @app.route('/extract-recipe', methods=['POST'])
 def extract_recipe():
-    """
-    Expects JSON body: { "recipeUrl": "https://some.recipe.url" }
-    Returns JSON: { "recipe": { "introduction": "...", "ingredients": [...], "instructions": [...] } }
-    """
     data = request.get_json()
     recipe_url = data.get('recipeUrl')
+
     if not recipe_url:
-        return jsonify({"error": "No recipeUrl provided"}), 400
+        return jsonify({'error': 'No URL provided'}), 400
 
     try:
         # 1. Scrape the webpage
         raw_text = scrape_recipe_page(recipe_url)
-        print("Scraped text:", raw_text[:200])  # Print first 200 chars
-
+        
         # 2. Parse & structure with OpenAI
         structured_recipe = parse_and_structure_recipe(raw_text)
-        print("Structured recipe:", structured_recipe)  # Print the structured data
+        
+        # 3. Save to database
+        new_recipe = Recipe(
+            url=recipe_url,
+            title=structured_recipe.get('title'),
+            introduction=structured_recipe.get('introduction'),
+            ingredients=structured_recipe.get('ingredients'),
+            instructions=structured_recipe.get('instructions')
+        )
+        db.session.add(new_recipe)
+        db.session.commit()
+        
+        # Include the ID in the response
+        structured_recipe['id'] = new_recipe.id
+        
+        return jsonify({
+            'success': True,
+            'recipe': structured_recipe
+        })
 
-        return jsonify({"recipe": structured_recipe})
     except Exception as e:
-        print(f"Error in extract_recipe: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        print(f"Error extracting recipe: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/generate-audio', methods=['POST'])
 def generate_audio():
     try:
         data = request.get_json()
-        text = data.get('text', '').strip()  # Strip whitespace
-        
-        # Validate input
+        text = data.get('text', '')
+        recipe_id = data.get('recipeId')
+
         if not text:
-            return jsonify({'error': 'No text provided for audio generation'}), 400
-            
-        # Limit text length to manage memory
-        max_length = 10000
-        if len(text) > max_length:
-            text = text[:max_length] + "..."
-        
+            return jsonify({'error': 'No text provided'}), 400
+
         try:
-            # Force garbage collection before generating audio
-            gc.collect()
-            
-            # Log the text length for debugging
-            print(f"Generating audio for text of length: {len(text)}")
-            
-            # Generate audio with minimal settings
+            # Generate unique filename
+            timestamp = int(time.time())
+            filename = f"recipe_{recipe_id}_{timestamp}.mp3"
+            filepath = os.path.join(AUDIO_FOLDER, filename)
+
+            print(f"Generating audio for recipe {recipe_id}")  # Debug print
+            print(f"Audio filename: {filename}")  # Debug print
+
+            # Generate audio
             response = client.audio.speech.create(
                 model="tts-1",
                 voice="alloy",
                 input=text,
                 speed=1.0
             )
-            
-            # Stream the response directly
-            def generate():
-                try:
-                    for chunk in response.iter_bytes(chunk_size=4096):
-                        if chunk:  # Ensure chunk is not empty
-                            yield chunk
-                except Exception as e:
-                    print(f"Error streaming audio: {str(e)}")
-                    yield b''  # Empty bytes to indicate error
-            
-            return Response(generate(), mimetype='audio/mpeg')
-            
+
+            # Save the audio file
+            with open(filepath, 'wb') as f:
+                for chunk in response.iter_bytes(chunk_size=4096):
+                    if chunk:
+                        f.write(chunk)
+
+            print(f"Audio file saved to: {filepath}")  # Debug print
+
+            # Update database if recipe_id provided
+            if recipe_id:
+                with app.app_context():
+                    recipe = db.session.get(Recipe, recipe_id)
+                    if recipe:
+                        # Delete old audio file if it exists
+                        if recipe.audio_filename:
+                            old_filepath = os.path.join(AUDIO_FOLDER, recipe.audio_filename)
+                            if os.path.exists(old_filepath):
+                                os.remove(old_filepath)
+                        recipe.audio_filename = filename
+                        db.session.commit()
+                        print(f"Updated recipe {recipe_id} with audio filename: {filename}")  # Debug print
+                        print(f"Database record after update: {recipe.__dict__}")  # Debug print
+
+            # Return the audio file
+            return send_file(
+                filepath,
+                mimetype='audio/mpeg',
+                as_attachment=True,
+                download_name=filename
+            )
+
         except Exception as e:
             print(f"Error generating audio: {str(e)}")
-            error_message = str(e)
-            if 'invalid_request_error' in error_message:
-                return jsonify({'error': 'Invalid text format for audio generation'}), 400
             return jsonify({'error': 'Failed to generate audio'}), 500
-            
+
     except Exception as e:
-        print(f"General error in generate_audio: {str(e)}")
+        print(f"Error in generate_audio: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    finally:
-        # Force cleanup
-        gc.collect()
 
 @app.route('/results')
 def results():

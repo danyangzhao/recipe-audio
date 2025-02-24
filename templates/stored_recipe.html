@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ recipe.title }} - Stored Recipe</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <nav class="navigation">
+            <a href="{{ url_for('index') }}" class="btn back-btn">← Back to Home</a>
+        </nav>
+
+        <div id="recipe-container">
+            {% if recipe %}
+                <h1>{{ recipe.title }}</h1>
+                
+                {% if recipe.introduction %}
+                    <h2>Introduction</h2>
+                    <div class="introduction">
+                        <p>{{ recipe.introduction }}</p>
+                    </div>
+                {% endif %}
+                
+                {% if recipe.ingredients %}
+                    <h2>Ingredients</h2>
+                    <ul class="ingredients-list">
+                        {% for ingredient in recipe.ingredients %}
+                            <li>
+                                <span class="quantity">{{ ingredient.quantity }}</span>
+                                <span class="item">{{ ingredient.item }}</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+                
+                {% if recipe.instructions %}
+                    <h2>Instructions</h2>
+                    <ol class="steps-list">
+                        {% for step in recipe.instructions %}
+                            <li>{{ step }}</li>
+                        {% endfor %}
+                    </ol>
+                {% endif %}
+            {% endif %}
+        </div>
+
+        <div id="audio-container" class="audio-container" style="display: {% if recipe.audio_filename %}block{% else %}none{% endif %};">
+            {% if recipe.audio_filename %}
+                <h2>Audio Version</h2>
+                <audio id="recipe-audio" class="audio-player" controls>
+                    <source src="{{ url_for('static', filename='audio/' + recipe.audio_filename) }}" type="audio/mpeg">
+                    Your browser does not support the audio element.
+                </audio>
+                <div class="download-container">
+                    <a href="{{ url_for('static', filename='audio/' + recipe.audio_filename) }}" 
+                       download="recipe_{{ recipe.id }}.mp3" 
+                       class="btn download-btn">
+                        Download Audio
+                    </a>
+                </div>
+            {% else %}
+                <div class="button-container">
+                    <button id="generate-audio" class="btn">Generate Audio</button>
+                    <div id="audio-status" class="status-indicator" style="display: none;">
+                        Audio Ready
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        {% if not recipe.audio_filename %}
+        document.getElementById('generate-audio').addEventListener('click', async () => {
+            try {
+                const generateAudioBtn = document.getElementById('generate-audio');
+                generateAudioBtn.disabled = true;
+                generateAudioBtn.textContent = 'Generating Audio...';
+
+                // Build audio text
+                let audioText = '';
+                {% if recipe.title %}
+                    audioText += 'Recipe: {{ recipe.title }}\n\n';
+                {% endif %}
+                
+                {% if recipe.introduction %}
+                    audioText += '{{ recipe.introduction }}\n\n';
+                {% endif %}
+                
+                {% if recipe.ingredients %}
+                    audioText += 'Ingredients:\n';
+                    {% for ingredient in recipe.ingredients %}
+                        audioText += '{{ ingredient.quantity }} {{ ingredient.item }}\n';
+                    {% endfor %}
+                    audioText += '\n';
+                {% endif %}
+                
+                {% if recipe.instructions %}
+                    audioText += 'Instructions:\n';
+                    {% for step in recipe.instructions %}
+                        audioText += 'Step {{ loop.index }}: {{ step }}\n';
+                    {% endfor %}
+                {% endif %}
+
+                const response = await fetch('/generate-audio', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text: audioText,
+                        recipeId: {{ recipe.id }}
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to generate audio');
+                }
+
+                // Show audio status
+                const audioStatus = document.getElementById('audio-status');
+                audioStatus.style.display = 'block';
+                audioStatus.textContent = 'Audio Ready';
+
+                // Reload the page after a short delay
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+
+            } catch (error) {
+                console.error('Error generating audio:', error);
+                const generateAudioBtn = document.getElementById('generate-audio');
+                generateAudioBtn.textContent = 'Generate Audio';
+                generateAudioBtn.disabled = false;
+                
+                const audioStatus = document.getElementById('audio-status');
+                audioStatus.style.display = 'block';
+                audioStatus.textContent = 'Error generating audio. Please try again.';
+                audioStatus.style.backgroundColor = '#fee';
+                audioStatus.style.color = '#c00';
+            }
+        });
+        {% endif %}
+    </script>
+</body>
+</html> 

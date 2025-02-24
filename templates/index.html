@@ -89,6 +89,28 @@
     <div class="button-container" style="margin-top: 2rem; text-align: center;">
       <button id="generate-audio" class="btn" style="display: none;">Generate Audio</button>
     </div>
+
+    <div class="popular-recipes">
+      <h2>Popular Recipes</h2>
+      {% if popular_recipes %}
+        <div class="recipe-grid">
+          {% for recipe in popular_recipes %}
+            <a href="{{ url_for('view_recipe', recipe_id=recipe.id) }}" class="recipe-card">
+              <h3>{{ recipe.title or "Untitled Recipe" }}</h3>
+              <p>{{ recipe.introduction[:100] + '...' if recipe.introduction else '' }}</p>
+              <div class="recipe-stats">
+                <span>👁️ {{ recipe.views }} views</span>
+                {% if recipe.audio_filename %}
+                <span>🔊 Audio available</span>
+                {% endif %}
+              </div>
+            </a>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p>No recipes yet. Be the first to add one!</p>
+      {% endif %}
+    </div>
   </div>
 
   <script>
@@ -117,7 +139,17 @@
 
           const data = await response.json();
           console.log('Recipe data received:', data); // Debug log
-          sessionStorage.setItem('extractedRecipe', JSON.stringify(data.recipe));
+
+          // Ensure we're storing the complete recipe object
+          const recipeToStore = {
+              id: data.recipe.id,
+              title: data.recipe.title,
+              introduction: data.recipe.introduction,
+              ingredients: data.recipe.ingredients,
+              instructions: data.recipe.instructions
+          };
+
+          sessionStorage.setItem('extractedRecipe', JSON.stringify(recipeToStore));
           console.log('Recipe data stored:', sessionStorage.getItem('extractedRecipe')); // Debug log
           window.location.href = '/result';
         } catch (error) {
@@ -126,47 +158,6 @@
         }
       });
     });
-
-    // Get the data from sessionStorage
-    let recipeData = sessionStorage.getItem('extractedRecipe');
-    console.log('Recipe data:', recipeData);
-
-    if (recipeData) {
-      recipeData = JSON.parse(recipeData);
-      console.log('Parsed recipe:', recipeData);
-      displayRecipe(recipeData);
-      console.log('Button before:', generateAudioBtn.style.display);
-      generateAudioBtn.style.display = 'inline-block';
-      console.log('Button after:', generateAudioBtn.style.display);
-    } else {
-      console.log('No recipe data found');
-      recipeContainer.innerHTML = '<p>No recipe data found. Go back and extract a recipe first.</p>';
-    }
-
-    // Add this right after your form submit handler
-    async function testExtraction() {
-        try {
-            const testUrl = 'https://www.allrecipes.com/recipe/158968/spinach-and-feta-turkey-burgers/';
-            const response = await fetch('/extract-recipe', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ recipeUrl: testUrl })
-            });
-
-            const data = await response.json();
-            console.log('Test extraction response:', data);
-            
-            if (data.recipe) {
-                sessionStorage.setItem('extractedRecipe', JSON.stringify(data.recipe));
-                console.log('Test data stored in sessionStorage:', sessionStorage.getItem('extractedRecipe'));
-            }
-        } catch (error) {
-            console.error('Test extraction failed:', error);
-        }
-    }
-
-    // Call the test function when the page loads
-    document.addEventListener('DOMContentLoaded', testExtraction);
   </script>
 </body>
 </html>

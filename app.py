@@ -60,7 +60,7 @@ storage = AudioStorage()
 @app.route('/')
 def index():
     """Serve the main page with popular recipes"""
-    popular_recipes = Recipe.query.order_by(Recipe.views.desc()).limit(5).all()
+    popular_recipes = Recipe.query.order_by(Recipe.views.desc()).limit(10).all()
     return render_template('index.html', popular_recipes=popular_recipes)
 
 @app.route('/recipe/<int:recipe_id>')
@@ -102,10 +102,18 @@ def extract_recipe():
         # 1. Scrape the webpage
         raw_text = scrape_recipe_page(recipe_url)
         
+        # Check if scraping returned an error message
+        if raw_text.startswith('Error scraping recipe:'):
+            return jsonify({'error': raw_text}), 400
+        
         # 2. Parse & structure with OpenAI
         structured_recipe = parse_and_structure_recipe(raw_text)
         
-        # 3. Save to database
+        # Validate the structured recipe has required fields
+        if not structured_recipe.get('title') or not structured_recipe.get('ingredients') or not structured_recipe.get('instructions'):
+            return jsonify({'error': 'Failed to parse recipe structure properly'}), 400
+
+        # 3. Only save to database if we have a valid recipe
         new_recipe = Recipe(
             url=recipe_url,
             title=structured_recipe.get('title'),

@@ -121,6 +121,9 @@
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         loadingMessage.style.display = 'block';
+        loadingMessage.textContent = 'Extracting recipe...';
+        loadingMessage.style.color = '#2c3e50';
+        loadingMessage.style.backgroundColor = '#f8f9fa';
 
         const urlInput = document.getElementById('recipe-url');
         const recipeUrl = urlInput.value.trim();
@@ -132,29 +135,31 @@
             body: JSON.stringify({ recipeUrl })
           });
 
+          const data = await response.json();
+
           if (!response.ok) {
-            loadingMessage.textContent = 'Error extracting recipe. Please check the URL and try again.';
+            loadingMessage.textContent = data.error || 'Error extracting recipe. Please check the URL and try again.';
+            loadingMessage.style.backgroundColor = '#fee';
+            loadingMessage.style.color = '#c00';
             return;
           }
 
-          const data = await response.json();
-          console.log('Recipe data received:', data); // Debug log
-
-          // Ensure we're storing the complete recipe object
+          // Only store and redirect if we have a successful response
           const recipeToStore = {
-              id: data.recipe.id,
-              title: data.recipe.title,
-              introduction: data.recipe.introduction,
-              ingredients: data.recipe.ingredients,
-              instructions: data.recipe.instructions
+            id: data.recipe.id,
+            title: data.recipe.title,
+            introduction: data.recipe.introduction,
+            ingredients: data.recipe.ingredients,
+            instructions: data.recipe.instructions
           };
 
           sessionStorage.setItem('extractedRecipe', JSON.stringify(recipeToStore));
-          console.log('Recipe data stored:', sessionStorage.getItem('extractedRecipe')); // Debug log
           window.location.href = '/result';
         } catch (error) {
           console.error('Error:', error);
           loadingMessage.textContent = 'An error occurred. Please try again.';
+          loadingMessage.style.backgroundColor = '#fee';
+          loadingMessage.style.color = '#c00';
         }
       });
     });

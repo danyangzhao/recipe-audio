@@ -10,13 +10,25 @@ import logging
 import random
 from fake_useragent import UserAgent
 import cloudscraper
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 import brotli
 import gzip
 import io
+import os
+
+# Try to import Selenium dependencies - they may not be available on Heroku
+try:
+    import undetected_chromedriver as uc
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    SELENIUM_AVAILABLE = False
+    logging.warning("Selenium dependencies not available - will use cloudscraper only")
+
+# Detect if running on Heroku or in a production environment
+IS_HEROKU = os.environ.get('DYNO') is not None
+IS_PRODUCTION = os.environ.get('PYTHON_ENV') == 'production' or IS_HEROKU
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -233,7 +245,10 @@ def decode_response_content(response) -> str:
                     import chardet
                     detected = chardet.detect(content[:1000])
                     charset = detected.get('encoding', 'utf-8')
-                except:
+                except ImportError:
+                    logger.warning("chardet not available, using utf-8")
+                    charset = 'utf-8'
+                except Exception:
                     charset = 'utf-8'
             
             try:
@@ -250,7 +265,13 @@ def decode_response_content(response) -> str:
 def scrape_with_selenium(url: str, debug_html: bool = False) -> str:
     """
     Scrape using Selenium with undetected-chromedriver to bypass Cloudflare.
+    Returns empty string if Selenium is not available or on Heroku.
     """
+    # Skip Selenium on Heroku or when not available
+    if IS_HEROKU or IS_PRODUCTION or not SELENIUM_AVAILABLE:
+        logger.info("Skipping Selenium (not available or running on Heroku)")
+        return ""
+    
     try:
         options = uc.ChromeOptions()
         options.add_argument('--headless')
@@ -313,19 +334,24 @@ def scrape_with_selenium(url: str, debug_html: bool = False) -> str:
         return extract_recipe_content(soup, url)
     except Exception as e:
         logger.error(f"Error with Selenium scraping: {str(e)}")
-        return f"Error scraping recipe: {str(e)}"
+        return ""
 
 def scrape_recipe_page(url: str, max_retries: int = 3, debug: bool = False) -> str:
     """
     Scrapes a recipe webpage and returns the raw text content.
     """
-    # First try with Selenium
-    logger.info("Attempting to scrape with Selenium")
-    result = scrape_with_selenium(url, debug_html=debug)
-    if result and result != "No recipe content found":
-        return result
+    # Try with Selenium first (only if available and not on Heroku)
+    if SELENIUM_AVAILABLE and not IS_HEROKU and not IS_PRODUCTION:
+        logger.info("Attempting to scrape with Selenium")
+        result = scrape_with_selenium(url, debug_html=debug)
+        if result and result != "No recipe content found":
+            return result
+        else:
+            logger.info("Selenium didn't return content, falling back to cloudscraper")
+    else:
+        logger.info("Using cloudscraper only (Selenium not available or on Heroku)")
     
-    # If Selenium fails, try with cloudscraper
+    # Use cloudscraper (this works well on Heroku)
     scraper = cloudscraper.create_scraper(
         browser={
             'browser': 'chrome',

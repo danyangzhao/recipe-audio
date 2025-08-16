@@ -4,8 +4,8 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "gunicorn app:app --config gunicorn_config.py",
-    "healthcheckPath": "/",
+    "startCommand": "python migrate_db.py && gunicorn app:app --config gunicorn_config.py",
+    "healthcheckPath": "/health",
     "healthcheckTimeout": 100,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10

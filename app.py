@@ -52,6 +52,14 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
+# Initialize database tables
+with app.app_context():
+    try:
+        db.create_all()
+        print("✅ Database tables created successfully!")
+    except Exception as e:
+        print(f"⚠️  Database initialization warning: {e}")
+
 # Create audio storage directory
 AUDIO_FOLDER = 'static/audio'
 if not os.path.exists(AUDIO_FOLDER):
@@ -68,6 +76,22 @@ def health():
         'database_configured': True
     })
 
+@app.route('/migrate')
+def migrate_database():
+    """Database migration endpoint for Railway"""
+    try:
+        from migrate_db import main as run_migration
+        run_migration()
+        return jsonify({
+            'status': 'success',
+            'message': 'Database migration completed successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Migration failed: {str(e)}'
+        }), 500
+
 @app.route('/')
 def index():
     """Serve the main page with popular recipes"""
@@ -77,8 +101,15 @@ def index():
                              popular_recipes=[], 
                              config_error="OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable.")
     
-    popular_recipes = Recipe.query.order_by(Recipe.views.desc()).limit(10).all()
-    return render_template('index.html', popular_recipes=popular_recipes)
+    try:
+        popular_recipes = Recipe.query.order_by(Recipe.views.desc()).limit(10).all()
+        return render_template('index.html', popular_recipes=popular_recipes)
+    except Exception as e:
+        print(f"Database error: {e}")
+        # Return empty recipes list if database has issues
+        return render_template('index.html', 
+                             popular_recipes=[], 
+                             config_error="Database connection issue. Please check the migration endpoint: /migrate")
 
 @app.route('/recipe/<int:recipe_id>')
 def view_recipe(recipe_id):

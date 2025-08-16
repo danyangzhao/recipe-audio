@@ -12,10 +12,6 @@ Turn any recipe from the web into an audio file you can listen to while cooking!
 - **🔄 Fallback System**: Multiple scraping methods for better success rates
 - **📊 Recipe Database**: Stores and tracks popular recipes
 
-## 🚀 Live Demo
-
-Visit the live application: [Recipe Audio App](https://your-app-url.herokuapp.com)
-
 ## 🛠️ Technology Stack
 
 - **Backend**: Flask (Python)

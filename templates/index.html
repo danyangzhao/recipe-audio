@@ -64,6 +64,25 @@
   <div class="container">
     <h1>Recipe Audio Generator</h1>
     
+    {% if config_error %}
+    <div class="config-error" style="background-color: #f8d7da; color: #721c24; padding: 1rem; margin: 1rem 0; border-radius: 8px; border: 1px solid #f5c6cb;">
+      <strong>Configuration Error:</strong> {{ config_error }}
+      <br><br>
+      <strong>To fix this:</strong>
+      <ol>
+        <li>Go to your Railway dashboard</li>
+        <li>Navigate to your project's Variables tab</li>
+        <li>Add the following environment variables:</li>
+        <ul>
+          <li><code>OPENAI_API_KEY</code> - Your OpenAI API key</li>
+          <li><code>AWS_ACCESS_KEY_ID</code> - Your AWS access key (for audio storage)</li>
+          <li><code>AWS_SECRET_ACCESS_KEY</code> - Your AWS secret key</li>
+          <li><code>AWS_S3_BUCKET</code> - Your S3 bucket name</li>
+        </ul>
+      </ol>
+    </div>
+    {% endif %}
+    
     <div class="form-container">
       <form id="recipe-form">
         <div class="form-group">

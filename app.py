@@ -26,10 +26,11 @@ load_dotenv()
 openai_api_key = os.getenv('OPENAI_API_KEY')
 
 if not openai_api_key:
-    raise ValueError("No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
-
-# Configure your OpenAI client
-client = OpenAI(api_key=openai_api_key)
+    print("WARNING: No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
+    client = None
+else:
+    # Configure your OpenAI client
+    client = OpenAI(api_key=openai_api_key)
 
 # Database configuration
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -58,9 +59,24 @@ if not os.path.exists(AUDIO_FOLDER):
 
 storage = AudioStorage()
 
+@app.route('/health')
+def health():
+    """Health check endpoint for Railway"""
+    return jsonify({
+        'status': 'healthy',
+        'openai_configured': client is not None,
+        'database_configured': True
+    })
+
 @app.route('/')
 def index():
     """Serve the main page with popular recipes"""
+    # Check if OpenAI is configured
+    if client is None:
+        return render_template('index.html', 
+                             popular_recipes=[], 
+                             config_error="OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable.")
+    
     popular_recipes = Recipe.query.order_by(Recipe.views.desc()).limit(10).all()
     return render_template('index.html', popular_recipes=popular_recipes)
 
@@ -155,6 +171,10 @@ def generate_audio():
         # Generate unique filename
         timestamp = int(time.time())
         filename = f"recipe_{recipe_id}_{timestamp}.mp3"
+
+        # Check if OpenAI client is available
+        if client is None:
+            return jsonify({'error': 'OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable.'}), 500
 
         # Generate audio using OpenAI
         response = client.audio.speech.create(

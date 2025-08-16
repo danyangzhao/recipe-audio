@@ -10,10 +10,12 @@ load_dotenv()
 # Get API key
 api_key = os.getenv('OPENAI_API_KEY')
 if not api_key:
-    raise ValueError("No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
-
-# Initialize the client with the API key
-client = OpenAI(api_key=api_key)
+    print("WARNING: No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
+    # Don't raise error immediately - let the app start and handle it gracefully
+    client = None
+else:
+    # Initialize the client with the API key
+    client = OpenAI(api_key=api_key)
 
 def parse_and_structure_recipe(raw_text: str) -> dict:
     """
@@ -48,6 +50,14 @@ def parse_and_structure_recipe(raw_text: str) -> dict:
     """
 
     try:
+        if client is None:
+            return {
+                "title": "Configuration Error",
+                "introduction": "OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable.",
+                "ingredients": [],
+                "instructions": []
+            }
+        
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],

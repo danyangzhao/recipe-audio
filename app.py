@@ -1,6 +1,7 @@
 # app.py
 from flask import Flask, request, jsonify, send_file, render_template, Response
 from scrape import scrape_recipe_page
+from enhanced_scraping import scrape_recipe_page_enhanced
 from process_recipe import parse_and_structure_recipe
 from tts import generate_audio_from_text  # or use the google TTS function
 from models import db, Recipe
@@ -99,10 +100,15 @@ def extract_recipe():
         return jsonify({'error': 'No URL provided'}), 400
 
     try:
-        # 1. Scrape the webpage
+        # 1. Scrape the webpage with fallback to enhanced scraper
         raw_text = scrape_recipe_page(recipe_url)
         
-        # Check if scraping returned an error message
+        # If original scraper fails, try enhanced scraper
+        if raw_text.startswith('Error scraping recipe:') or raw_text == "No recipe content found":
+            print(f"Original scraper failed, trying enhanced scraper for: {recipe_url}")
+            raw_text = scrape_recipe_page_enhanced(recipe_url)
+        
+        # Check if both scrapers failed
         if raw_text.startswith('Error scraping recipe:'):
             return jsonify({'error': raw_text}), 400
         
@@ -152,8 +158,8 @@ def generate_audio():
 
         # Generate audio using OpenAI
         response = client.audio.speech.create(
-            model="tts-1",
-            voice="alloy",
+            model="tts-1-hd",  # Using HD model for better quality
+            voice="nova",      # Using nova voice for clearer speech
             input=text
         )
 

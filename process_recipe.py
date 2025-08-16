@@ -50,13 +50,13 @@ def parse_and_structure_recipe(raw_text: str) -> dict:
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},  # Ensures valid JSON response
+            temperature=0.1  # Lower temperature for more consistent parsing
         )
 
-        # Extract the assistant's message and clean it
+        # Extract the assistant's message - no need to clean JSON formatting
         ai_text = response.choices[0].message.content.strip()
-        # Remove markdown code block syntax if present
-        ai_text = ai_text.replace('```json', '').replace('```', '').strip()
         print("AI Response:", ai_text)
 
         # Parse JSON response

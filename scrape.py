@@ -8,7 +8,10 @@ from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 import logging
 import random
-from fake_useragent import UserAgent
+try:
+    from fake_useragent import UserAgent  # optional
+except ImportError:
+    UserAgent = None
 import cloudscraper
 import brotli
 import gzip
@@ -39,9 +42,11 @@ def get_random_headers() -> Dict[str, str]:
     Generate random headers to mimic a real browser.
     """
     try:
+        if UserAgent is None:
+            raise Exception("fake_useragent not available")
         ua = UserAgent()
         user_agent = ua.random
-    except:
+    except Exception:
         # Fallback user agents if fake_useragent fails
         user_agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -70,18 +75,31 @@ def get_random_headers() -> Dict[str, str]:
 def get_structured_data(soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
     """
     Extract structured data (JSON-LD) from the page if available.
+    Searches all ld+json script tags and returns the first Recipe object found.
     """
     try:
-        script_tag = soup.find('script', {'type': 'application/ld+json'})
-        if script_tag:
-            data = json.loads(script_tag.string)
+        scripts = soup.find_all('script', {'type': 'application/ld+json'})
+        for script_tag in scripts:
+            try:
+                if not script_tag.string:
+                    continue
+                data = json.loads(script_tag.string)
+            except Exception:
+                # Some sites embed multiple JSON objects without a list; try to recover
+                try:
+                    text = script_tag.get_text(strip=True)
+                    data = json.loads(text)
+                except Exception:
+                    continue
             if isinstance(data, list):
-                # Find the recipe object in the list
                 for item in data:
-                    if isinstance(item, dict) and item.get('@type') == 'Recipe':
+                    if isinstance(item, dict) and item.get('@type') in ('Recipe', ['Recipe']):
                         return item
-            elif isinstance(data, dict) and data.get('@type') == 'Recipe':
-                return data
+            elif isinstance(data, dict):
+                # Sometimes '@type' can be a list
+                atype = data.get('@type')
+                if atype == 'Recipe' or (isinstance(atype, list) and 'Recipe' in atype):
+                    return data
     except Exception as e:
         logger.warning(f"Error parsing structured data: {str(e)}")
     return None
@@ -121,6 +139,84 @@ def extract_recipe_content(soup: BeautifulSoup, url: str) -> str:
                     instructions.append(step)
             content_parts.append("Instructions:\n" + "\n".join(f"{i+1}. {step}" for i, step in enumerate(instructions)))
         return "\n\n".join(content_parts)
+
+    # If no structured data, handle site-specific structures
+    if '10000recipe.com' in url:
+        logger.info("Using 10000recipe-specific selectors")
+        # Title
+        title_el = (
+            soup.select_one('h3.view2_tit') or
+            soup.select_one('h1.recipe-title') or
+            soup.find('h1')
+        )
+        if not title_el:
+            og_title = soup.find('meta', attrs={'property': 'og:title'})
+            if og_title and og_title.get('content'):
+                content_parts.append(f"Title: {clean_text(og_title.get('content'))}\n")
+        else:
+            content_parts.append(f"Title: {clean_text(title_el.get_text())}\n")
+
+        # Ingredients
+        ingredient_items = []
+        candidate_lists = []
+        # Common containers on 10000recipe
+        candidate_lists.extend(soup.select('.ready_ingre3 li'))
+        candidate_lists.extend(soup.select('#divConfirmedMaterialArea li'))
+        candidate_lists.extend(soup.select('.cont_ingre li'))
+        candidate_lists.extend(soup.select('.ingre_list li'))
+        candidate_lists.extend(soup.select('.ingredient_list li'))
+
+        if not candidate_lists:
+            # Heuristic: find a heading that contains 재료 or Ingredients and take following list
+            heading = soup.find(lambda tag: tag.name in ['h2', 'h3', 'strong', 'p'] and tag.get_text(strip=True) and (
+                '재료' in tag.get_text() or 'Ingredients' in tag.get_text()))
+            if heading:
+                next_list = heading.find_next(['ul', 'ol'])
+                if next_list:
+                    candidate_lists.extend(next_list.find_all('li'))
+
+        for li in candidate_lists:
+            text = li.get_text(" ", strip=True)
+            # Clean trailing shop prompts like '구매'
+            text = re.sub(r'\s*구매\s*$', '', text)
+            text = re.sub(r'\s*\(선택\)\s*$', '', text)
+            text = clean_text(text)
+            if text and text not in ingredient_items:
+                ingredient_items.append(text)
+
+        if ingredient_items:
+            content_parts.append("Ingredients:\n" + "\n".join(f"- {ing}" for ing in ingredient_items))
+
+        # Instructions
+        steps = []
+        step_containers = []
+        step_containers.extend(soup.select('.view_step .media .media-body'))
+        step_containers.extend(soup.select('.view_step .step_text'))
+        step_containers.extend(soup.select('.view_step li'))
+        if not step_containers:
+            # Heuristic: find heading with 조리순서 or Steps then capture following list/paragraphs
+            step_heading = soup.find(lambda tag: tag.name in ['h2', 'h3', 'strong', 'p'] and tag.get_text(strip=True) and (
+                '조리순서' in tag.get_text() or 'Steps' in tag.get_text()))
+            if step_heading:
+                # Prefer ordered list after heading; fallback to paragraphs
+                ordered = step_heading.find_next('ol')
+                if ordered:
+                    step_containers.extend(ordered.find_all('li'))
+                else:
+                    paras = step_heading.find_all_next(['p', 'li'], limit=20)
+                    step_containers.extend(paras)
+
+        for elem in step_containers:
+            text = elem.get_text(" ", strip=True)
+            text = clean_text(text)
+            if text and len(text) > 2 and text not in steps:
+                steps.append(text)
+
+        if steps:
+            content_parts.append("Instructions:\n" + "\n".join(f"{i+1}. {t}" for i, t in enumerate(steps)))
+
+        if content_parts:
+            return "\n\n".join(content_parts)
 
     # If no structured data, try specific selectors for Maangchi
     if 'maangchi.com' in url:

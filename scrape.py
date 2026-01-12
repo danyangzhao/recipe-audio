@@ -144,23 +144,29 @@ def extract_recipe_content(soup: BeautifulSoup, url: str) -> str:
     structured_data = get_structured_data(soup)
     if structured_data:
         logger.info("Found structured data")
-        if 'name' in structured_data:
-            content_parts.append(f"Title: {structured_data['name']}\n")
-        if 'description' in structured_data:
-            content_parts.append(f"Description: {structured_data['description']}\n")
-        if 'recipeIngredient' in structured_data:
+        has_ingredients = 'recipeIngredient' in structured_data and structured_data['recipeIngredient']
+        has_instructions = 'recipeInstructions' in structured_data and structured_data['recipeInstructions']
+        
+        # Only use structured data if it has both ingredients AND instructions
+        if has_ingredients and has_instructions:
+            if 'name' in structured_data:
+                content_parts.append(f"Title: {structured_data['name']}\n")
+            if 'description' in structured_data:
+                content_parts.append(f"Description: {structured_data['description']}\n")
             content_parts.append("Ingredients:\n" + "\n".join(f"- {ing}" for ing in structured_data['recipeIngredient']))
-        if 'recipeInstructions' in structured_data:
             instructions = []
             for step in structured_data['recipeInstructions']:
                 if isinstance(step, dict) and 'text' in step:
                     instructions.append(step['text'])
                 elif isinstance(step, str):
                     instructions.append(step)
-            content_parts.append("Instructions:\n" + "\n".join(f"{i+1}. {step}" for i, step in enumerate(instructions)))
-        return "\n\n".join(content_parts)
+            if instructions:
+                content_parts.append("Instructions:\n" + "\n".join(f"{i+1}. {step}" for i, step in enumerate(instructions)))
+            return "\n\n".join(content_parts)
+        else:
+            logger.info("Structured data incomplete, falling back to site-specific selectors")
 
-    # If no structured data, handle site-specific structures
+    # If no structured data (or incomplete), handle site-specific structures
     if '10000recipe.com' in url:
         logger.info("Using 10000recipe-specific selectors")
         # Title
@@ -241,34 +247,42 @@ def extract_recipe_content(soup: BeautifulSoup, url: str) -> str:
     # If no structured data, try specific selectors for Maangchi
     if 'maangchi.com' in url:
         logger.info("Using Maangchi-specific selectors")
-        # Try to find the main content area
-        main_content = (
-            soup.find('div', class_='entry-content') or
-            soup.find('div', class_='recipe-content') or
-            soup.find('article', class_='post')
-        )
         
-        if main_content:
-            # Get title
-            title = (
-                soup.find('h1', class_=['recipe-title', 'entry-title']) or
-                soup.find('h1')
-            )
-            if title:
-                content_parts.append(f"Title: {clean_text(title.get_text())}\n")
-            
-            # Get ingredients
-            ingredients = main_content.find(['div', 'ul'], class_=['ingredients', 'recipe-ingredients'])
-            if ingredients:
-                content_parts.append("Ingredients:\n" + clean_text(ingredients.get_text(separator="\n")))
-            
-            # Get instructions
-            instructions = main_content.find(['div', 'ol'], class_=['instructions', 'directions', 'steps'])
-            if instructions:
-                content_parts.append("Instructions:\n" + clean_text(instructions.get_text(separator="\n")))
-            
-            if content_parts:
-                return "\n\n".join(content_parts)
+        # Get title (h1 or h2 with recipe name)
+        title = soup.find('h1') or soup.find('h2', class_='wp-block-heading')
+        if title:
+            content_parts.append(f"Title: {clean_text(title.get_text())}\n")
+        
+        # Find "Ingredients" heading and get the following ul
+        ingredients_heading = soup.find(['h2', 'h3'], string=lambda x: x and 'Ingredients' in x and 'Buy' not in x and 'Amazon' not in x)
+        if ingredients_heading:
+            # Get the next ul element after the heading
+            ingredients_ul = ingredients_heading.find_next('ul', class_='wp-block-list')
+            if ingredients_ul:
+                ingredient_items = []
+                for li in ingredients_ul.find_all('li'):
+                    text = li.get_text(strip=True)
+                    if text:
+                        ingredient_items.append(text)
+                if ingredient_items:
+                    content_parts.append("Ingredients:\n" + "\n".join(f"- {ing}" for ing in ingredient_items))
+        
+        # Find all instruction steps (ol elements with wp-block-list class, excluding navigation)
+        instructions = []
+        for ol in soup.find_all('ol', class_='wp-block-list'):
+            # Skip navigation lists
+            if 'nav' in str(ol.get('class', [])):
+                continue
+            for li in ol.find_all('li'):
+                text = li.get_text(strip=True)
+                if text and len(text) > 20:  # Filter out short items
+                    instructions.append(text)
+        
+        if instructions:
+            content_parts.append("Instructions:\n" + "\n".join(f"{i+1}. {step}" for i, step in enumerate(instructions)))
+        
+        if len(content_parts) >= 2:  # At least title + one other section
+            return "\n\n".join(content_parts)
 
     # Fallback to general recipe selectors
     logger.info("Using general recipe selectors")
@@ -405,6 +419,13 @@ def scrape_with_selenium(url: str, debug_html: bool = False) -> str:
         # Get the page source after JavaScript execution
         html = driver.page_source
         driver.quit()
+        
+        # Check for Cloudflare block pages
+        blocked_indicators = ['you have been blocked', 'cloudflare', 'access denied', 'captcha', 'ray id']
+        html_lower = html.lower()
+        if any(indicator in html_lower for indicator in blocked_indicators):
+            logger.warning("Selenium got a blocked/Cloudflare page, will fall back to cloudscraper")
+            return ""
         
         if debug_html:
             # Print relevant parts of the HTML for debugging
@@ -565,9 +586,13 @@ def scrape_recipe_page(url: str, max_retries: int = 3, debug: bool = False) -> s
                 
                 print("\n=== END CLOUDSCRAPER DEBUG ===\n")
 
-            # Remove unwanted elements
-            for element in soup.find_all(['script', 'style', 'iframe', 'noscript']):
+            # Remove unwanted elements (but keep JSON-LD scripts for recipe data!)
+            for element in soup.find_all(['style', 'iframe', 'noscript']):
                 element.decompose()
+            # Remove regular scripts but preserve JSON-LD
+            for script in soup.find_all('script'):
+                if script.get('type') != 'application/ld+json':
+                    script.decompose()
 
             # Extract recipe content
             result = extract_recipe_content(soup, url)

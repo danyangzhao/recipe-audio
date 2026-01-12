@@ -1,22 +1,15 @@
 # app.py
-from flask import Flask, request, jsonify, send_file, render_template, Response
-from flask import abort
+from flask import Flask, request, jsonify, render_template, abort
 from scrape import scrape_recipe_page
 from enhanced_scraping import scrape_recipe_page_enhanced
 from process_recipe import parse_and_structure_recipe
-from tts import generate_audio_from_text  # or use the google TTS function
 from models import db, Recipe
-from flask import url_for
 from storage import AudioStorage
 
 import os
-import io
 import time
 from dotenv import load_dotenv
 from openai import OpenAI
-import tempfile
-import gc  # For garbage collection
-from urllib.parse import urlparse
 from sqlalchemy.exc import IntegrityError
 
 app = Flask(__name__)
@@ -285,11 +278,6 @@ def generate_audio():
     except Exception as e:
         print(f"Error in generate_audio: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
-@app.route('/results')
-def results():
-    # Delete this entire route as we're not using it anymore
-    pass
 
 if __name__ == '__main__':
     # For local dev only

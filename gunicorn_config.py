@@ -15,11 +15,13 @@ worker_class = "gthread"  # Thread-based worker for memory efficiency
 timeout = 60  # Reduced from 120 to be more memory efficient
 keepalive = 2
 
-# Aggressive memory management
-max_requests = 25  # Restart worker more frequently
-max_requests_jitter = 5
-worker_tmp_dir = "/dev/shm"
-preload_app = True
+# Memory management
+max_requests = 50  # Restart worker periodically to free memory
+max_requests_jitter = 10
+
+# Don't preload app - let workers initialize independently
+# This helps with healthcheck passing before app is fully loaded
+preload_app = False
 
 # Log configs
 accesslog = "-"

@@ -1,5 +1,6 @@
 # app.py
 from flask import Flask, request, jsonify, send_file, render_template, Response
+from flask import abort
 from scrape import scrape_recipe_page
 from enhanced_scraping import scrape_recipe_page_enhanced
 from process_recipe import parse_and_structure_recipe
@@ -16,6 +17,7 @@ from openai import OpenAI
 import tempfile
 import gc  # For garbage collection
 from urllib.parse import urlparse
+from sqlalchemy.exc import IntegrityError
 
 app = Flask(__name__)
 
@@ -50,15 +52,22 @@ else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///recipes.db'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Add connection timeout for PostgreSQL to prevent hanging
+if DATABASE_URL and 'postgresql' in DATABASE_URL:
+    app.config['SQLALCHEMY_ENGINE_OPTIONS']['connect_args'] = {
+        'connect_timeout': 10  # 10 second connection timeout
+    }
+
 db.init_app(app)
 
-# Initialize database tables
+# Initialize database tables (non-blocking - we'll handle errors gracefully in routes)
 with app.app_context():
     try:
         db.create_all()
         print("✅ Database tables created successfully!")
     except Exception as e:
-        print(f"⚠️  Database initialization warning: {e}")
+        print(f"⚠️  Database initialization warning (will retry on first request): {e}")
 
 # Create audio storage directory
 AUDIO_FOLDER = 'static/audio'
@@ -70,11 +79,11 @@ storage = AudioStorage()
 @app.route('/health')
 def health():
     """Health check endpoint for Railway"""
+    # Simple health check - don't query database to avoid startup delays
     return jsonify({
         'status': 'healthy',
-        'openai_configured': client is not None,
-        'database_configured': True
-    })
+        'openai_configured': client is not None
+    }), 200
 
 @app.route('/migrate')
 def migrate_database():
@@ -96,20 +105,20 @@ def migrate_database():
 def index():
     """Serve the main page with popular recipes"""
     # Check if OpenAI is configured
+    config_error = None
     if client is None:
-        return render_template('index.html', 
-                             popular_recipes=[], 
-                             config_error="OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable.")
+        config_error = "OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable."
     
+    # Try to fetch popular recipes, but don't fail the page load if database is unavailable
+    popular_recipes = []
     try:
         popular_recipes = Recipe.query.order_by(Recipe.views.desc()).limit(10).all()
-        return render_template('index.html', popular_recipes=popular_recipes)
     except Exception as e:
         print(f"Database error: {e}")
-        # Return empty recipes list if database has issues
-        return render_template('index.html', 
-                             popular_recipes=[], 
-                             config_error="Database connection issue. Please check the migration endpoint: /migrate")
+        if not config_error:
+            config_error = "Database connection issue. Please check the migration endpoint: /migrate"
+    
+    return render_template('index.html', popular_recipes=popular_recipes, config_error=config_error)
 
 @app.route('/recipe/<int:recipe_id>')
 def view_recipe(recipe_id):
@@ -147,6 +156,23 @@ def extract_recipe():
         return jsonify({'error': 'No URL provided'}), 400
 
     try:
+        # 0. If recipe already exists, return it instead of inserting a duplicate
+        existing_recipe = Recipe.query.filter_by(url=recipe_url).first()
+        if existing_recipe:
+            existing_structured = {
+                'id': existing_recipe.id,
+                'title': existing_recipe.title,
+                'introduction': existing_recipe.introduction,
+                'ingredients': existing_recipe.ingredients,
+                'instructions': existing_recipe.instructions,
+                'audio_filename': existing_recipe.audio_filename,
+                'audio_url': existing_recipe.audio_url,
+            }
+            return jsonify({
+                'success': True,
+                'recipe': existing_structured
+            })
+
         # 1. Scrape the webpage with fallback to enhanced scraper
         raw_text = scrape_recipe_page(recipe_url)
         
@@ -184,6 +210,26 @@ def extract_recipe():
             'success': True,
             'recipe': structured_recipe
         })
+
+    except IntegrityError:
+        # Handle race condition or duplicate insert attempts
+        db.session.rollback()
+        existing_recipe = Recipe.query.filter_by(url=recipe_url).first()
+        if existing_recipe:
+            existing_structured = {
+                'id': existing_recipe.id,
+                'title': existing_recipe.title,
+                'introduction': existing_recipe.introduction,
+                'ingredients': existing_recipe.ingredients,
+                'instructions': existing_recipe.instructions,
+                'audio_filename': existing_recipe.audio_filename,
+                'audio_url': existing_recipe.audio_url,
+            }
+            return jsonify({
+                'success': True,
+                'recipe': existing_structured
+            })
+        return jsonify({'error': 'Duplicate URL and unable to fetch existing record'}), 409
 
     except Exception as e:
         print(f"Error extracting recipe: {str(e)}")

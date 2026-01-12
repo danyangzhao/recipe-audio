@@ -59,7 +59,7 @@ def parse_and_structure_recipe(raw_text: str) -> dict:
             }
         
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",  # Cost-effective model, works great for structured JSON parsing
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},  # Ensures valid JSON response
             temperature=0.1  # Lower temperature for more consistent parsing

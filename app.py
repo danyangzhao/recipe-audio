@@ -248,8 +248,8 @@ def generate_audio():
 
         # Generate audio using OpenAI
         response = client.audio.speech.create(
-            model="tts-1-hd",  # Using HD model for better quality
-            voice="nova",      # Using nova voice for clearer speech
+            model="tts-1",  # Standard model - half the cost, good quality for recipes
+            voice="nova",   # Using nova voice for clearer speech
             input=text
         )
 

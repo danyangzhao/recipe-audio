@@ -76,30 +76,50 @@ def get_structured_data(soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
     """
     Extract structured data (JSON-LD) from the page if available.
     Searches all ld+json script tags and returns the first Recipe object found.
+    Handles @graph arrays used by many WordPress recipe plugins.
     """
+    def find_recipe_in_data(data):
+        """Recursively search for Recipe object in JSON-LD data."""
+        if isinstance(data, dict):
+            # Check if this is a Recipe
+            atype = data.get('@type')
+            if atype == 'Recipe' or (isinstance(atype, list) and 'Recipe' in atype):
+                return data
+            # Check @graph array (used by many WordPress plugins like WPRM)
+            if '@graph' in data:
+                result = find_recipe_in_data(data['@graph'])
+                if result:
+                    return result
+            # Check nested objects
+            for key, value in data.items():
+                if isinstance(value, (dict, list)):
+                    result = find_recipe_in_data(value)
+                    if result:
+                        return result
+        elif isinstance(data, list):
+            for item in data:
+                result = find_recipe_in_data(item)
+                if result:
+                    return result
+        return None
+    
     try:
         scripts = soup.find_all('script', {'type': 'application/ld+json'})
         for script_tag in scripts:
             try:
-                if not script_tag.string:
+                text = script_tag.string or script_tag.get_text(strip=True)
+                if not text:
                     continue
-                data = json.loads(script_tag.string)
-            except Exception:
-                # Some sites embed multiple JSON objects without a list; try to recover
-                try:
-                    text = script_tag.get_text(strip=True)
-                    data = json.loads(text)
-                except Exception:
-                    continue
-            if isinstance(data, list):
-                for item in data:
-                    if isinstance(item, dict) and item.get('@type') in ('Recipe', ['Recipe']):
-                        return item
-            elif isinstance(data, dict):
-                # Sometimes '@type' can be a list
-                atype = data.get('@type')
-                if atype == 'Recipe' or (isinstance(atype, list) and 'Recipe' in atype):
-                    return data
+                data = json.loads(text)
+                recipe = find_recipe_in_data(data)
+                if recipe:
+                    logger.info("Found Recipe in JSON-LD structured data")
+                    return recipe
+            except json.JSONDecodeError:
+                continue
+            except Exception as e:
+                logger.debug(f"Error parsing script tag: {e}")
+                continue
     except Exception as e:
         logger.warning(f"Error parsing structured data: {str(e)}")
     return None

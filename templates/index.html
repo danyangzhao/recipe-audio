@@ -11,10 +11,9 @@
   <div class="container">
     <div class="page-shell">
       <header class="hero">
-        <span class="hero-eyebrow">Modern recipe workspace</span>
         <h1 class="hero-title">Recipe Audio Generator</h1>
         <p class="hero-subtitle">
-          Paste a recipe URL to extract ingredients and steps, then generate a clean audio walkthrough in one click.
+          Paste a recipe link to extract ingredients &amp; steps. Generate an audio file to listen while you cook.
         </p>
       </header>
 
@@ -42,7 +41,7 @@
       <section class="upload-card">
         <h2 class="section-title">Upload recipe URL</h2>
         <p class="section-subtitle">
-          We support most recipe blogs and food websites with structured ingredients and instructions.
+          Most recipe blogs are supported
         </p>
 
         <form id="recipe-form" novalidate>
@@ -169,6 +168,7 @@
             introduction: data.recipe.introduction,
             ingredients: data.recipe.ingredients,
             instructions: data.recipe.instructions,
+            url: data.recipe.url || recipeUrl,
             audio_filename: data.recipe.audio_filename || null,
             audio_url: data.recipe.audio_url || null
           };

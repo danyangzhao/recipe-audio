@@ -16,6 +16,13 @@
             {% if recipe %}
                 <header class="recipe-header">
                     <h1 class="recipe-title">{{ recipe.title or "Untitled Recipe" }}</h1>
+                    {% if recipe.url %}
+                        <p class="recipe-source">
+                            <span class="recipe-source-name">{{ recipe.source_name or recipe.url }}</span>
+                            &middot;
+                            <a href="{{ recipe.url }}" target="_blank" rel="noopener noreferrer">View original recipe</a>
+                        </p>
+                    {% endif %}
                     <div class="recipe-meta">
                         {% if recipe.ingredients %}
                             <span class="meta-chip">{{ recipe.ingredients|length }} ingredients</span>
@@ -49,11 +56,9 @@
                                         {% if ingredient is mapping %}
                                             {% set ingredient_quantity = ingredient.quantity if ingredient.quantity is defined else (ingredient.amount if ingredient.amount is defined else '') %}
                                             {% set ingredient_item = ingredient.item if ingredient.item is defined else (ingredient.text if ingredient.text is defined else (ingredient.name if ingredient.name is defined else '')) %}
-                                            <span class="quantity">{{ ingredient_quantity }}</span>
-                                            <span class="item">{{ ingredient_item }}</span>
+                                            {{ (ingredient_quantity ~ " " ~ ingredient_item)|trim }}
                                         {% else %}
-                                            <span class="quantity"></span>
-                                            <span class="item">{{ ingredient }}</span>
+                                            {{ ingredient }}
                                         {% endif %}
                                     </li>
                                 {% endfor %}

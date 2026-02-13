@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 import time
 import json
 import re
+import html
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 import logging
@@ -36,6 +37,150 @@ IS_PRODUCTION = os.environ.get('PYTHON_ENV') == 'production' or IS_HEROKU
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def _is_recipe_type(type_value: Any) -> bool:
+    """
+    Return True when a schema.org type value represents a Recipe.
+    Supports strings, lists, and fully-qualified type URLs.
+    """
+    if isinstance(type_value, str):
+        normalized = type_value.strip().lower()
+        return (
+            normalized == "recipe" or
+            normalized.endswith("/recipe") or
+            normalized.endswith(":recipe")
+        )
+    if isinstance(type_value, list):
+        return any(_is_recipe_type(item) for item in type_value)
+    return False
+
+def _sanitize_json_ld_text(text: str) -> str:
+    """
+    Remove non-printable control characters that often appear in broken JSON-LD.
+    Some recipe plugins inject literal CR/LF inside string values, which is invalid JSON.
+    """
+    return re.sub(r'[\x00-\x1F\x7F]', ' ', text)
+
+def _load_json_ld_payloads(raw_text: str) -> list[Any]:
+    """
+    Parse JSON-LD script content with tolerant fallbacks.
+    Returns one or more decoded payloads.
+    """
+    if not raw_text:
+        return []
+
+    # Try raw and HTML-unescaped variants.
+    candidates: list[str] = []
+    for candidate in [raw_text.strip(), html.unescape(raw_text.strip())]:
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+
+    payloads: list[Any] = []
+    decoder = json.JSONDecoder()
+
+    for candidate in candidates:
+        attempts = [candidate, _sanitize_json_ld_text(candidate)]
+
+        # First prefer full-object parses.
+        parsed_full_payload = False
+        for attempt in attempts:
+            try:
+                payloads.append(json.loads(attempt))
+                parsed_full_payload = True
+                break
+            except json.JSONDecodeError:
+                continue
+
+        if parsed_full_payload:
+            continue
+
+        # Fallback: parse concatenated JSON payloads in one script.
+        for attempt in attempts:
+            idx = 0
+            found_any = False
+            while idx < len(attempt):
+                while idx < len(attempt) and attempt[idx] not in "{[":
+                    idx += 1
+                if idx >= len(attempt):
+                    break
+                try:
+                    parsed, end = decoder.raw_decode(attempt, idx)
+                    payloads.append(parsed)
+                    idx = end
+                    found_any = True
+                except json.JSONDecodeError:
+                    idx += 1
+            if found_any:
+                break
+
+    return payloads
+
+def _normalize_structured_text(value: Any) -> str:
+    """Normalize whitespace and decode HTML entities from structured fields."""
+    if value is None:
+        return ""
+    text = html.unescape(str(value))
+    return re.sub(r'\s+', ' ', text).strip()
+
+def _extract_recipe_ingredients(structured_data: Dict[str, Any]) -> list[str]:
+    """Extract ingredient strings from structured recipe data."""
+    raw_ingredients = structured_data.get('recipeIngredient', [])
+    ingredients: list[str] = []
+
+    if isinstance(raw_ingredients, str):
+        raw_ingredients = [raw_ingredients]
+
+    if isinstance(raw_ingredients, list):
+        for item in raw_ingredients:
+            text = ""
+            if isinstance(item, str):
+                text = item
+            elif isinstance(item, dict):
+                # Different plugins use different keys for ingredient display text.
+                text = (
+                    item.get('text') or
+                    item.get('name') or
+                    item.get('item') or
+                    ""
+                )
+            normalized = _normalize_structured_text(text)
+            if normalized and normalized not in ingredients:
+                ingredients.append(normalized)
+
+    return ingredients
+
+def _extract_recipe_instructions(structured_data: Dict[str, Any]) -> list[str]:
+    """Extract flattened instruction steps from structured recipe data."""
+    raw_instructions = structured_data.get('recipeInstructions', [])
+    steps: list[str] = []
+
+    def add_step(text_value: Any) -> None:
+        normalized = _normalize_structured_text(text_value)
+        if normalized and normalized not in steps:
+            steps.append(normalized)
+
+    def walk(node: Any) -> None:
+        if isinstance(node, str):
+            add_step(node)
+            return
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if isinstance(node, dict):
+            # Common schema forms:
+            # - HowToStep{text}
+            # - HowToSection{itemListElement:[HowToStep...]}
+            if node.get('text'):
+                add_step(node.get('text'))
+            if node.get('name') and _is_recipe_type(node.get('@type')):
+                add_step(node.get('name'))
+            for key in ('itemListElement', 'steps', 'recipeInstructions'):
+                if key in node:
+                    walk(node[key])
+
+    walk(raw_instructions)
+    return steps
 
 def get_random_headers() -> Dict[str, str]:
     """
@@ -82,8 +227,7 @@ def get_structured_data(soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
         """Recursively search for Recipe object in JSON-LD data."""
         if isinstance(data, dict):
             # Check if this is a Recipe
-            atype = data.get('@type')
-            if atype == 'Recipe' or (isinstance(atype, list) and 'Recipe' in atype):
+            if _is_recipe_type(data.get('@type')):
                 return data
             # Check @graph array (used by many WordPress plugins like WPRM)
             if '@graph' in data:
@@ -106,20 +250,19 @@ def get_structured_data(soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
     try:
         scripts = soup.find_all('script', {'type': 'application/ld+json'})
         for script_tag in scripts:
-            try:
-                text = script_tag.string or script_tag.get_text(strip=True)
-                if not text:
+            text = script_tag.string or script_tag.get_text(strip=True)
+            if not text:
+                continue
+            payloads = _load_json_ld_payloads(text)
+            for data in payloads:
+                try:
+                    recipe = find_recipe_in_data(data)
+                    if recipe:
+                        logger.info("Found Recipe in JSON-LD structured data")
+                        return recipe
+                except Exception as e:
+                    logger.debug(f"Error scanning structured data payload: {e}")
                     continue
-                data = json.loads(text)
-                recipe = find_recipe_in_data(data)
-                if recipe:
-                    logger.info("Found Recipe in JSON-LD structured data")
-                    return recipe
-            except json.JSONDecodeError:
-                continue
-            except Exception as e:
-                logger.debug(f"Error parsing script tag: {e}")
-                continue
     except Exception as e:
         logger.warning(f"Error parsing structured data: {str(e)}")
     return None
@@ -144,24 +287,19 @@ def extract_recipe_content(soup: BeautifulSoup, url: str) -> str:
     structured_data = get_structured_data(soup)
     if structured_data:
         logger.info("Found structured data")
-        has_ingredients = 'recipeIngredient' in structured_data and structured_data['recipeIngredient']
-        has_instructions = 'recipeInstructions' in structured_data and structured_data['recipeInstructions']
+        ingredients = _extract_recipe_ingredients(structured_data)
+        instructions = _extract_recipe_instructions(structured_data)
+        has_ingredients = bool(ingredients)
+        has_instructions = bool(instructions)
         
         # Only use structured data if it has both ingredients AND instructions
         if has_ingredients and has_instructions:
             if 'name' in structured_data:
-                content_parts.append(f"Title: {structured_data['name']}\n")
+                content_parts.append(f"Title: {_normalize_structured_text(structured_data['name'])}\n")
             if 'description' in structured_data:
-                content_parts.append(f"Description: {structured_data['description']}\n")
-            content_parts.append("Ingredients:\n" + "\n".join(f"- {ing}" for ing in structured_data['recipeIngredient']))
-            instructions = []
-            for step in structured_data['recipeInstructions']:
-                if isinstance(step, dict) and 'text' in step:
-                    instructions.append(step['text'])
-                elif isinstance(step, str):
-                    instructions.append(step)
-            if instructions:
-                content_parts.append("Instructions:\n" + "\n".join(f"{i+1}. {step}" for i, step in enumerate(instructions)))
+                content_parts.append(f"Description: {_normalize_structured_text(structured_data['description'])}\n")
+            content_parts.append("Ingredients:\n" + "\n".join(f"- {ing}" for ing in ingredients))
+            content_parts.append("Instructions:\n" + "\n".join(f"{i+1}. {step}" for i, step in enumerate(instructions)))
             return "\n\n".join(content_parts)
         else:
             logger.info("Structured data incomplete, falling back to site-specific selectors")

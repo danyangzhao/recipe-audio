@@ -69,6 +69,23 @@ if not os.path.exists(AUDIO_FOLDER):
 
 storage = AudioStorage()
 
+def is_scrape_failure(raw_text: str) -> bool:
+    """
+    Detect scraper failure payloads so we do not send them into LLM parsing.
+    """
+    if not raw_text:
+        return True
+
+    normalized = raw_text.strip().lower()
+    failure_markers = (
+        "error scraping recipe:",
+        "failed to extract recipe content",
+        "no recipe content found",
+        "access denied",
+        "cloudflare",
+    )
+    return any(marker in normalized for marker in failure_markers)
+
 @app.route('/health')
 def health():
     """Health check endpoint for Railway"""
@@ -170,13 +187,13 @@ def extract_recipe():
         raw_text = scrape_recipe_page(recipe_url)
         
         # If original scraper fails, try enhanced scraper
-        if raw_text.startswith('Error scraping recipe:') or raw_text == "No recipe content found":
+        if is_scrape_failure(raw_text):
             print(f"Original scraper failed, trying enhanced scraper for: {recipe_url}")
             raw_text = scrape_recipe_page_enhanced(recipe_url)
         
         # Check if both scrapers failed
-        if raw_text.startswith('Error scraping recipe:'):
-            return jsonify({'error': raw_text}), 400
+        if is_scrape_failure(raw_text):
+            return jsonify({'error': raw_text or 'Failed to extract recipe content'}), 400
         
         # 2. Parse & structure with OpenAI
         structured_recipe = parse_and_structure_recipe(raw_text)

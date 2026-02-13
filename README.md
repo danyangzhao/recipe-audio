@@ -56,6 +56,13 @@ AWS_ACCESS_KEY_ID=your_aws_access_key
 AWS_SECRET_ACCESS_KEY=your_aws_secret_key
 AWS_S3_BUCKET=your_s3_bucket_name
 DATABASE_URL=sqlite:///recipes.db
+ERROR_ALERT_RECIPIENT_EMAIL=your_alert_email
+ERROR_ALERT_SENDER_EMAIL=your_sender_email
+SMTP_HOST=your_smtp_host
+SMTP_PORT=587
+SMTP_USERNAME=your_smtp_username
+SMTP_PASSWORD=your_smtp_password
+SMTP_USE_TLS=true
 ```
 
 ### 5. Initialize Database
@@ -184,7 +191,8 @@ Converts recipe text to audio.
 ```json
 {
   "text": "Recipe content...",
-  "recipeId": 123
+  "recipeId": 123,
+  "recipeUrl": "https://www.allrecipes.com/recipe/12345"
 }
 ```
 
@@ -223,6 +231,20 @@ Converts recipe text to audio.
 - `AWS_SECRET_ACCESS_KEY`: AWS secret key for S3
 - `AWS_S3_BUCKET`: S3 bucket name for audio storage
 - `DATABASE_URL`: Database connection string
+- `ERROR_ALERT_RECIPIENT_EMAIL`: Recipient for production extraction/audio failure alerts
+- `ERROR_ALERT_SENDER_EMAIL`: Sender address used for alert emails
+- `SMTP_HOST`: SMTP server host used to send alerts
+- `SMTP_PORT`: SMTP server port (typically 587 for TLS or 465 for SSL)
+- `SMTP_USERNAME`: SMTP username (also used as sender fallback)
+- `SMTP_PASSWORD`: SMTP password/app password
+- `SMTP_USE_TLS`: Set to `true` to enable STARTTLS (default `true`)
+- `SMTP_USE_SSL`: Set to `true` to use implicit SSL SMTP
+- `PYTHON_ENV`: Set to `production` in production so alerts are enabled
+
+### Production Error Alerts
+- Alerts are only sent in production (`PYTHON_ENV=production`, `RAILWAY_ENVIRONMENT=production`, or Heroku dyno).
+- Extraction failures and audio generation failures trigger an email that includes the recipe URL and error details.
+- Keep recipient/sender addresses in environment variables only (not in source code).
 
 ## 🐛 Troubleshooting
 

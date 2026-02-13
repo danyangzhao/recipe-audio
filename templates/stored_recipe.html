@@ -285,7 +285,8 @@
                         },
                         body: JSON.stringify({
                             text: audioText,
-                            recipeId: recipe.id || null
+                            recipeId: recipe.id || null,
+                            recipeUrl: recipe.url || null
                         })
                     });
                     const data = await response.json().catch(() => ({}));

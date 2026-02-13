@@ -5,6 +5,7 @@ from enhanced_scraping import scrape_recipe_page_enhanced
 from process_recipe import parse_and_structure_recipe
 from models import db, Recipe
 from storage import AudioStorage
+from error_alerts import send_production_error_email
 
 import os
 import time
@@ -103,6 +104,32 @@ def derive_source_name(url: str) -> str:
         hostname = hostname[4:]
     return hostname
 
+
+def notify_route_error(operation: str, recipe_url: str, error_message: str, recipe_id=None) -> None:
+    """
+    Send production-only error email alerts for extraction/audio failures.
+    """
+    send_production_error_email(
+        operation=operation,
+        recipe_url=recipe_url,
+        error_message=error_message,
+        recipe_id=recipe_id,
+    )
+
+
+def resolve_recipe_url(recipe_id, fallback_url: str = "") -> str:
+    if isinstance(fallback_url, str) and fallback_url.strip():
+        return fallback_url.strip()
+    if not recipe_id:
+        return ""
+
+    try:
+        recipe = db.session.get(Recipe, recipe_id)
+        return recipe.url if recipe and recipe.url else ""
+    except Exception as exc:
+        print(f"Could not resolve recipe URL for recipe_id={recipe_id}: {exc}")
+        return ""
+
 @app.route('/health')
 def health():
     """Health check endpoint for Railway"""
@@ -178,8 +205,8 @@ def result():
 
 @app.route('/extract-recipe', methods=['POST'])
 def extract_recipe():
-    data = request.get_json()
-    recipe_url = data.get('recipeUrl')
+    data = request.get_json(silent=True) or {}
+    recipe_url = (data.get('recipeUrl') or '').strip()
 
     if not recipe_url:
         return jsonify({'error': 'No URL provided'}), 400
@@ -214,14 +241,18 @@ def extract_recipe():
         
         # Check if both scrapers failed
         if is_scrape_failure(raw_text):
-            return jsonify({'error': raw_text or 'Failed to extract recipe content'}), 400
+            error_message = raw_text or 'Failed to extract recipe content'
+            notify_route_error('extract_recipe', recipe_url, error_message)
+            return jsonify({'error': error_message}), 400
         
         # 2. Parse & structure with OpenAI
         structured_recipe = parse_and_structure_recipe(raw_text)
         
         # Validate the structured recipe has required fields
         if not structured_recipe.get('title') or not structured_recipe.get('ingredients') or not structured_recipe.get('instructions'):
-            return jsonify({'error': 'Failed to parse recipe structure properly'}), 400
+            error_message = 'Failed to parse recipe structure properly'
+            notify_route_error('extract_recipe', recipe_url, error_message)
+            return jsonify({'error': error_message}), 400
 
         # 3. Only save to database if we have a valid recipe
         new_recipe = Recipe(
@@ -268,17 +299,23 @@ def extract_recipe():
 
     except Exception as e:
         print(f"Error extracting recipe: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        error_message = str(e)
+        notify_route_error('extract_recipe', recipe_url, error_message)
+        return jsonify({'error': error_message}), 500
 
 @app.route('/generate-audio', methods=['POST'])
 def generate_audio():
+    data = request.get_json(silent=True) or {}
+    recipe_id = data.get('recipeId')
+    recipe_url = resolve_recipe_url(recipe_id, data.get('recipeUrl') or '')
+
     try:
-        data = request.get_json()
         text = data.get('text', '')
-        recipe_id = data.get('recipeId')
 
         if not text:
-            return jsonify({'error': 'No text provided'}), 400
+            error_message = 'No text provided'
+            notify_route_error('generate_audio', recipe_url, error_message, recipe_id=recipe_id)
+            return jsonify({'error': error_message}), 400
 
         # Generate unique filename
         timestamp = int(time.time())
@@ -286,7 +323,9 @@ def generate_audio():
 
         # Check if OpenAI client is available
         if client is None:
-            return jsonify({'error': 'OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable.'}), 500
+            error_message = 'OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable.'
+            notify_route_error('generate_audio', recipe_url, error_message, recipe_id=recipe_id)
+            return jsonify({'error': error_message}), 500
 
         # Generate audio using OpenAI
         response = client.audio.speech.create(
@@ -302,7 +341,9 @@ def generate_audio():
         audio_url = storage.save_audio(audio_content, filename)
 
         if not audio_url:
-            return jsonify({'error': 'Failed to save audio'}), 500
+            error_message = 'Failed to save audio'
+            notify_route_error('generate_audio', recipe_url, error_message, recipe_id=recipe_id)
+            return jsonify({'error': error_message}), 500
 
         # Update database
         if recipe_id:
@@ -319,7 +360,9 @@ def generate_audio():
 
     except Exception as e:
         print(f"Error in generate_audio: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        error_message = str(e)
+        notify_route_error('generate_audio', recipe_url, error_message, recipe_id=recipe_id)
+        return jsonify({'error': error_message}), 500
 
 if __name__ == '__main__':
     # For local dev only

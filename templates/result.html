@@ -6,174 +6,361 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Recipe Result</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>
-    .btn {
-      display: inline-block;
-      padding: 0.8rem 1.5rem;
-      background-color: #2c3e50;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 1rem;
-      transition: background-color 0.3s ease;
-    }
-
-    .btn:hover {
-      background-color: #34495e;
-    }
-  </style>
 </head>
 <body>
   <div class="container">
     <nav class="navigation">
-      <a href="{{ url_for('index') }}" class="btn back-btn">← Back to Home</a>
+      <a href="{{ url_for('index') }}" class="btn btn-secondary back-btn">← Back to Home</a>
     </nav>
 
-    <div id="recipe-container"></div>
+    <div class="page-shell recipe-layout">
+      <header id="recipe-header" class="recipe-header" hidden>
+        <h1 id="recipe-title" class="recipe-title"></h1>
+        <div id="recipe-meta" class="recipe-meta"></div>
+      </header>
 
-    <div class="button-container" style="margin-top: 2rem; text-align: center;">
-      <button id="generate-audio" class="btn" style="display: none;">Generate Audio</button>
-      <div id="audio-status" class="status-indicator" style="display: none;">
-        Audio Ready
-      </div>
+      <div id="recipe-container" class="recipe-content"></div>
+
+      <section class="action-panel">
+        <div class="button-row">
+          <button id="generate-audio" class="btn btn-primary" hidden>
+            <span class="btn-text">Generate Audio</span>
+          </button>
+          <a id="download-audio" class="btn btn-secondary" href="#" download hidden>Download Audio</a>
+        </div>
+        <div id="audio-status" class="status-message" role="status" aria-live="polite" hidden></div>
+      </section>
+
+      <div id="audio-container" class="audio-container" hidden></div>
     </div>
-
-    <div id="audio-container" class="audio-container" style="display: none;"></div>
   </div>
 
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       const recipeContainer = document.getElementById('recipe-container');
+      const recipeHeader = document.getElementById('recipe-header');
+      const recipeTitle = document.getElementById('recipe-title');
+      const recipeMeta = document.getElementById('recipe-meta');
       const generateAudioBtn = document.getElementById('generate-audio');
+      const downloadAudioLink = document.getElementById('download-audio');
       const audioContainer = document.getElementById('audio-container');
-      
+      const audioStatus = document.getElementById('audio-status');
+      const defaultButtonLabel = 'Generate Audio';
+
       // Get recipe from session storage
       const recipeData = sessionStorage.getItem('extractedRecipe');
       let recipe = null;
 
-      if (recipeData) {
-        recipe = JSON.parse(recipeData);
-        displayRecipe(recipe);
-        generateAudioBtn.style.display = 'block';
-      } else {
-        recipeContainer.innerHTML = '<p>No recipe data found. Please go back and extract a recipe first.</p>';
+      function normalizeText(value) {
+        if (typeof value !== 'string') {
+          return '';
+        }
+        return value.trim();
       }
 
-      // Handle audio generation
-      generateAudioBtn.addEventListener('click', async () => {
+      function ingredientToParts(ingredient) {
+        if (typeof ingredient === 'string') {
+          return { quantity: '', item: ingredient.trim() };
+        }
+        if (!ingredient || typeof ingredient !== 'object') {
+          return { quantity: '', item: '' };
+        }
+        const quantity = normalizeText(String(ingredient.quantity || ingredient.amount || ''));
+        const item = normalizeText(String(ingredient.item || ingredient.text || ingredient.name || ''));
+        if (!item && quantity) {
+          return { quantity: '', item: quantity };
+        }
+        return { quantity: quantity, item: item };
+      }
+
+      function ingredientToText(ingredient) {
+        const parts = ingredientToParts(ingredient);
+        return [parts.quantity, parts.item].filter(Boolean).join(' ').trim();
+      }
+
+      function stepToText(step) {
+        if (typeof step === 'string') {
+          return step.trim();
+        }
+        if (!step || typeof step !== 'object') {
+          return '';
+        }
+        return normalizeText(String(step.text || step.instruction || step.name || ''));
+      }
+
+      function setAudioButtonLoading(isLoading) {
+        generateAudioBtn.disabled = isLoading;
+        if (isLoading) {
+          generateAudioBtn.innerHTML = '<span class="loading-spinner" aria-hidden="true"></span><span class="btn-text">Generating...</span>';
+          return;
+        }
+        generateAudioBtn.innerHTML = '<span class="btn-text">' + defaultButtonLabel + '</span>';
+      }
+
+      function setStatus(message, type) {
+        audioStatus.hidden = false;
+        audioStatus.textContent = message;
+        audioStatus.className = 'status-message';
+        if (type) {
+          audioStatus.classList.add('is-' + type);
+        }
+      }
+
+      function addMetaChip(label, isSuccess) {
+        const chip = document.createElement('span');
+        chip.className = isSuccess ? 'meta-chip meta-chip-success' : 'meta-chip';
+        chip.textContent = label;
+        recipeMeta.appendChild(chip);
+      }
+
+      function updateMeta(recipePayload) {
+        recipeMeta.innerHTML = '';
+        const ingredientsCount = Array.isArray(recipePayload.ingredients) ? recipePayload.ingredients.length : 0;
+        const stepsCount = Array.isArray(recipePayload.instructions) ? recipePayload.instructions.length : 0;
+
+        if (ingredientsCount > 0) {
+          addMetaChip(ingredientsCount + ' ingredients');
+        }
+        if (stepsCount > 0) {
+          addMetaChip(stepsCount + ' steps');
+        }
+        if (recipePayload.audio_url) {
+          addMetaChip('Audio ready', true);
+        }
+        if (ingredientsCount === 0 && stepsCount === 0 && !recipePayload.audio_url) {
+          addMetaChip('Recipe imported');
+        }
+      }
+
+      function createSection(title, bodyElement) {
+        const section = document.createElement('section');
+        section.className = 'section-card';
+
+        const heading = document.createElement('h2');
+        heading.textContent = title;
+        section.appendChild(heading);
+
+        section.appendChild(bodyElement);
+        return section;
+      }
+
+      function renderEmptyState(message, includeBackLink) {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'empty-state';
+
+        const messageNode = document.createElement('p');
+        messageNode.textContent = message;
+        emptyState.appendChild(messageNode);
+
+        if (includeBackLink) {
+          const link = document.createElement('a');
+          link.href = '/';
+          link.textContent = 'Go back home to extract a recipe.';
+          link.style.display = 'inline-block';
+          link.style.marginTop = '0.65rem';
+          emptyState.appendChild(link);
+        }
+
+        recipeContainer.replaceChildren(emptyState);
+      }
+
+      function renderRecipe(recipePayload) {
+        const title = normalizeText(recipePayload.title) || 'Untitled Recipe';
+        recipeTitle.textContent = title;
+        recipeHeader.hidden = false;
+        updateMeta(recipePayload);
+
+        const fragment = document.createDocumentFragment();
+        let sectionCount = 0;
+
+        const introductionText = normalizeText(recipePayload.introduction);
+        if (introductionText) {
+          const paragraph = document.createElement('p');
+          paragraph.className = 'introduction';
+          paragraph.textContent = introductionText;
+          fragment.appendChild(createSection('Introduction', paragraph));
+          sectionCount += 1;
+        }
+
+        if (Array.isArray(recipePayload.ingredients) && recipePayload.ingredients.length > 0) {
+          const list = document.createElement('ul');
+          list.className = 'ingredients-list';
+          recipePayload.ingredients.forEach((ingredient) => {
+            const ingredientParts = ingredientToParts(ingredient);
+            if (!ingredientParts.quantity && !ingredientParts.item) {
+              return;
+            }
+            const item = document.createElement('li');
+            const quantityNode = document.createElement('span');
+            const valueNode = document.createElement('span');
+            quantityNode.className = 'quantity';
+            valueNode.className = 'item';
+            quantityNode.textContent = ingredientParts.quantity;
+            valueNode.textContent = ingredientParts.item;
+            item.appendChild(quantityNode);
+            item.appendChild(valueNode);
+            list.appendChild(item);
+          });
+          if (list.children.length > 0) {
+            fragment.appendChild(createSection('Ingredients', list));
+            sectionCount += 1;
+          }
+        }
+
+        if (Array.isArray(recipePayload.instructions) && recipePayload.instructions.length > 0) {
+          const orderedList = document.createElement('ol');
+          orderedList.className = 'steps-list';
+          recipePayload.instructions.forEach((step) => {
+            const stepText = stepToText(step);
+            if (!stepText) {
+              return;
+            }
+            const item = document.createElement('li');
+            item.textContent = stepText;
+            orderedList.appendChild(item);
+          });
+          if (orderedList.children.length > 0) {
+            fragment.appendChild(createSection('Instructions', orderedList));
+            sectionCount += 1;
+          }
+        }
+
+        recipeContainer.innerHTML = '';
+        if (sectionCount === 0) {
+          renderEmptyState('This recipe was imported, but there were no formatted details to display.', false);
+          return;
+        }
+        recipeContainer.appendChild(fragment);
+      }
+
+      function renderAudioPlayer(audioUrl) {
+        audioContainer.innerHTML = '';
+        audioContainer.hidden = false;
+
+        const card = document.createElement('div');
+        card.className = 'audio-card';
+
+        const heading = document.createElement('h3');
+        heading.textContent = 'Listen to your recipe';
+        card.appendChild(heading);
+
+        const audio = document.createElement('audio');
+        audio.className = 'audio-player';
+        audio.controls = true;
+        audio.preload = 'none';
+
+        const source = document.createElement('source');
+        source.src = audioUrl;
+        source.type = 'audio/mpeg';
+        audio.appendChild(source);
+        audio.appendChild(document.createTextNode('Your browser does not support the audio element.'));
+
+        card.appendChild(audio);
+        audioContainer.appendChild(card);
+
+        downloadAudioLink.href = audioUrl;
+        downloadAudioLink.hidden = false;
+      }
+
+      function buildAudioText(recipePayload) {
+        const lines = [];
+        const title = normalizeText(recipePayload.title);
+        const introduction = normalizeText(recipePayload.introduction);
+        const ingredients = Array.isArray(recipePayload.ingredients) ? recipePayload.ingredients : [];
+        const steps = Array.isArray(recipePayload.instructions) ? recipePayload.instructions : [];
+
+        if (title) {
+          lines.push('Recipe: ' + title, '');
+        }
+        if (introduction) {
+          lines.push(introduction, '');
+        }
+        if (ingredients.length > 0) {
+          lines.push('Ingredients:');
+          ingredients.forEach((ingredient) => {
+            const ingredientLine = ingredientToText(ingredient);
+            if (ingredientLine) {
+              lines.push(ingredientLine);
+            }
+          });
+          lines.push('');
+        }
+        if (steps.length > 0) {
+          lines.push('Instructions:');
+          steps.forEach((step, index) => {
+            const stepText = stepToText(step);
+            if (stepText) {
+              lines.push('Step ' + (index + 1) + ': ' + stepText);
+            }
+          });
+        }
+
+        return lines.join('\n').trim();
+      }
+
+      async function handleGenerateAudio() {
+        const audioText = buildAudioText(recipe);
+        if (!audioText) {
+          setStatus('This recipe does not have enough content for audio generation yet.', 'error');
+          return;
+        }
+
         try {
-          generateAudioBtn.disabled = true;
-          generateAudioBtn.textContent = 'Generating Audio...';
-
-          // Build audio text
-          let audioText = '';
-          
-          if (recipe.title) {
-            audioText += `Recipe: ${recipe.title}\n\n`;
-          }
-
-          if (recipe.introduction) {
-            audioText += `${recipe.introduction}\n\n`;
-          }
-
-          if (Array.isArray(recipe.ingredients)) {
-            audioText += 'Ingredients:\n';
-            recipe.ingredients.forEach(ing => {
-              audioText += `${ing.quantity || ''} ${ing.item || ''}\n`;
-            });
-            audioText += '\n';
-          }
-
-          if (Array.isArray(recipe.instructions)) {
-            audioText += 'Instructions:\n';
-            recipe.instructions.forEach((step, index) => {
-              audioText += `Step ${index + 1}: ${step}\n`;
-            });
-          }
+          setAudioButtonLoading(true);
+          setStatus('Generating audio narration. This can take up to a minute...', 'loading');
 
           const response = await fetch('/generate-audio', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               text: audioText,
-              recipeId: recipe.id
+              recipeId: recipe.id || null
             })
           });
+          const data = await response.json().catch(() => ({}));
 
-          if (!response.ok) {
-            throw new Error('Failed to generate audio');
+          if (!response.ok || !data.audio_url) {
+            throw new Error(data.error || 'Failed to generate audio');
           }
 
-          const data = await response.json();
-
-          // Show audio status and player
-          const audioStatus = document.getElementById('audio-status');
-          audioStatus.style.display = 'block';
-          audioStatus.textContent = 'Audio Ready';
-
-          // Display audio player with S3 URL
-          const audioContainer = document.getElementById('audio-container');
-          audioContainer.style.display = 'block';
-          audioContainer.innerHTML = `
-            <audio controls style="width: 100%; margin-top: 1rem;">
-              <source src="${data.audio_url}" type="audio/mpeg">
-              Your browser does not support the audio element.
-            </audio>
-          `;
-
-          // Hide the generate button after successful generation
-          generateAudioBtn.style.display = 'none';
-
-          // Re-enable button (in case we need it later)
-          generateAudioBtn.textContent = 'Generate Audio';
-          generateAudioBtn.disabled = false;
-
+          recipe.audio_url = data.audio_url;
+          renderAudioPlayer(data.audio_url);
+          updateMeta(recipe);
+          setAudioButtonLoading(false);
+          generateAudioBtn.hidden = true;
+          setStatus('Audio is ready to play.', 'success');
         } catch (error) {
           console.error('Error generating audio:', error);
-          generateAudioBtn.textContent = 'Generate Audio';
-          generateAudioBtn.disabled = false;
-          
-          const audioStatus = document.getElementById('audio-status');
-          audioStatus.style.display = 'block';
-          audioStatus.textContent = 'Error generating audio. Please try again.';
-          audioStatus.style.backgroundColor = '#fee';
-          audioStatus.style.color = '#c00';
+          setAudioButtonLoading(false);
+          setStatus('Error generating audio. Please try again.', 'error');
         }
-      });
-
-      function displayRecipe(recipe) {
-        let html = '';
-        
-        if (recipe.title) {
-          html += `<h1>${recipe.title}</h1>`;
-        }
-
-        if (recipe.introduction) {
-          html += `<h2>Introduction</h2>
-                  <div class="introduction"><p>${recipe.introduction}</p></div>`;
-        }
-        
-        if (Array.isArray(recipe.ingredients)) {
-          html += '<h2>Ingredients</h2><ul class="ingredients-list">';
-          recipe.ingredients.forEach(ing => {
-            html += `<li><span class="quantity">${ing.quantity || ''}</span> <span class="item">${ing.item || ''}</span></li>`;
-          });
-          html += '</ul>';
-        }
-
-        if (Array.isArray(recipe.instructions)) {
-          html += '<h2>Instructions</h2><ol class="steps-list">';
-          recipe.instructions.forEach(step => {
-            html += `<li>${step}</li>`;
-          });
-          html += '</ol>';
-        }
-
-        recipeContainer.innerHTML = html;
       }
+
+      if (!recipeData) {
+        renderEmptyState('No recipe data found. Please extract a recipe first.', true);
+        setStatus('No recipe data found in this browser session.', 'error');
+        return;
+      }
+
+      try {
+        recipe = JSON.parse(recipeData);
+      } catch (error) {
+        console.error('Error parsing recipe data:', error);
+        renderEmptyState('The saved recipe could not be read. Please re-extract it.', true);
+        setStatus('Could not parse recipe data.', 'error');
+        return;
+      }
+
+      renderRecipe(recipe);
+      if (recipe.audio_url) {
+        renderAudioPlayer(recipe.audio_url);
+        setStatus('Audio is already available for this recipe.', 'success');
+        generateAudioBtn.hidden = true;
+        return;
+      }
+
+      generateAudioBtn.hidden = false;
+      generateAudioBtn.addEventListener('click', handleGenerateAudio);
     });
   </script>
 </body>

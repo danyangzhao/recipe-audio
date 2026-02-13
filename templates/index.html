@@ -6,117 +6,81 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Recipe Audio Generator</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>
-    .form-container {
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 2rem;
-    }
-
-    .form-group {
-      margin-bottom: 1.5rem;
-    }
-
-    .input-field {
-      width: 100%;
-      padding: 0.8rem;
-      margin-bottom: 1rem;
-      border: 2px solid #ddd;
-      border-radius: 8px;
-      font-size: 1rem;
-    }
-
-    .btn {
-      display: inline-block;
-      padding: 0.8rem 1.5rem;
-      background-color: #2c3e50;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 1rem;
-      transition: background-color 0.3s ease;
-      width: auto;
-      margin-top: 1rem;
-      min-width: 120px;
-    }
-
-    .btn:hover {
-      background-color: #34495e;
-    }
-
-    .loading {
-      display: none;
-      text-align: center;
-      margin-top: 1rem;
-      padding: 1rem;
-      background: #f8f9fa;
-      border-radius: 8px;
-      color: #2c3e50;
-    }
-
-    .button-container {
-      text-align: center;
-    }
-  </style>
 </head>
 <body>
   <div class="container">
-    <h1>Recipe Audio Generator</h1>
-    
-    {% if config_error %}
-    <div class="config-error" style="background-color: #f8d7da; color: #721c24; padding: 1rem; margin: 1rem 0; border-radius: 8px; border: 1px solid #f5c6cb;">
-      <strong>Configuration Error:</strong> {{ config_error }}
-      <br><br>
-      <strong>To fix this:</strong>
-      <ol>
-        <li>Go to your Railway dashboard</li>
-        <li>Navigate to your project's Variables tab</li>
-        <li>Add the following environment variables:</li>
-        <ul>
-          <li><code>OPENAI_API_KEY</code> - Your OpenAI API key</li>
-          <li><code>AWS_ACCESS_KEY_ID</code> - Your AWS access key (for audio storage)</li>
-          <li><code>AWS_SECRET_ACCESS_KEY</code> - Your AWS secret key</li>
-          <li><code>AWS_S3_BUCKET</code> - Your S3 bucket name</li>
-        </ul>
-      </ol>
-    </div>
-    {% endif %}
-    
-    <div class="form-container">
-      <form id="recipe-form">
-        <div class="form-group">
-          <label for="recipe-url">Recipe URL:</label>
-          <input 
-            type="url" 
-            id="recipe-url" 
-            name="recipe-url"
-            class="input-field"
-            placeholder="https://example.com/recipe" 
-            required 
-          />
-          <div class="button-container">
-            <button type="submit" class="btn">Extract Recipe</button>
-          </div>
-        </div>
-      </form>
-      <div id="loading-message" class="loading">
-        Extracting recipe...
+    <div class="page-shell">
+      <header class="hero">
+        <span class="hero-eyebrow">Modern recipe workspace</span>
+        <h1 class="hero-title">Recipe Audio Generator</h1>
+        <p class="hero-subtitle">
+          Paste a recipe URL to extract ingredients and steps, then generate a clean audio walkthrough in one click.
+        </p>
+      </header>
+
+      {% if config_error %}
+      <div class="alert-card alert-error">
+        <strong>Configuration Error:</strong> {{ config_error }}
+        <br><br>
+        <strong>To fix this:</strong>
+        <ol>
+          <li>Go to your Railway dashboard</li>
+          <li>Navigate to your project's Variables tab</li>
+          <li>
+            Add the following environment variables:
+            <ul>
+              <li><code>OPENAI_API_KEY</code> - Your OpenAI API key</li>
+              <li><code>AWS_ACCESS_KEY_ID</code> - Your AWS access key (for audio storage)</li>
+              <li><code>AWS_SECRET_ACCESS_KEY</code> - Your AWS secret key</li>
+              <li><code>AWS_S3_BUCKET</code> - Your S3 bucket name</li>
+            </ul>
+          </li>
+        </ol>
       </div>
+      {% endif %}
+
+      <section class="upload-card">
+        <h2 class="section-title">Upload recipe URL</h2>
+        <p class="section-subtitle">
+          We support most recipe blogs and food websites with structured ingredients and instructions.
+        </p>
+
+        <form id="recipe-form" novalidate>
+          <div class="form-group">
+            <label for="recipe-url" class="form-label">Recipe URL</label>
+            <input
+              type="url"
+              id="recipe-url"
+              name="recipe-url"
+              class="input-field"
+              placeholder="https://example.com/recipe"
+              autocomplete="url"
+              required
+            />
+            <p class="input-hint">Tip: include the full page URL (http or https).</p>
+          </div>
+
+          <div class="button-row">
+            <button id="extract-btn" type="submit" class="btn btn-primary">
+              <span class="btn-text">Extract Recipe</span>
+            </button>
+          </div>
+        </form>
+
+        <div id="loading-message" class="status-message" role="status" aria-live="polite" hidden></div>
+      </section>
     </div>
 
-    <div class="button-container" style="margin-top: 2rem; text-align: center;">
-      <button id="generate-audio" class="btn" style="display: none;">Generate Audio</button>
-    </div>
-
-    <div class="popular-recipes">
+    <section class="popular-recipes">
       <h2>Popular Recipes</h2>
       {% if popular_recipes %}
         <div class="recipe-grid">
           {% for recipe in popular_recipes %}
             <a href="{{ url_for('view_recipe', recipe_id=recipe.id) }}" class="recipe-card">
               <h3>{{ recipe.title or "Untitled Recipe" }}</h3>
-              <p>{{ recipe.introduction[:100] + '...' if recipe.introduction else '' }}</p>
+              <p>
+                {{ recipe.introduction[:120] ~ '...' if recipe.introduction and recipe.introduction|length > 120 else recipe.introduction or 'No introduction available.' }}
+              </p>
               <div class="recipe-stats">
                 <span>👁️ {{ recipe.views }} views</span>
                 {% if recipe.audio_filename %}
@@ -127,25 +91,57 @@
           {% endfor %}
         </div>
       {% else %}
-        <p>No recipes yet. Be the first to add one!</p>
+        <p class="empty-state">No recipes yet. Be the first to add one.</p>
       {% endif %}
-    </div>
+    </section>
   </div>
 
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       const form = document.getElementById('recipe-form');
       const loadingMessage = document.getElementById('loading-message');
+      const submitButton = document.getElementById('extract-btn');
+      const urlInput = document.getElementById('recipe-url');
+      const defaultButtonLabel = 'Extract Recipe';
 
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        loadingMessage.style.display = 'block';
-        loadingMessage.textContent = 'Extracting recipe...';
-        loadingMessage.style.color = '#2c3e50';
-        loadingMessage.style.backgroundColor = '#f8f9fa';
+      function isValidHttpUrl(value) {
+        try {
+          const parsed = new URL(value);
+          return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+        } catch (error) {
+          return false;
+        }
+      }
 
-        const urlInput = document.getElementById('recipe-url');
+      function setButtonLoading(isLoading) {
+        submitButton.disabled = isLoading;
+        if (isLoading) {
+          submitButton.innerHTML = '<span class="loading-spinner" aria-hidden="true"></span><span class="btn-text">Extracting...</span>';
+          return;
+        }
+        submitButton.innerHTML = '<span class="btn-text">' + defaultButtonLabel + '</span>';
+      }
+
+      function setStatus(message, type) {
+        loadingMessage.hidden = false;
+        loadingMessage.textContent = message;
+        loadingMessage.className = 'status-message';
+        if (type) {
+          loadingMessage.classList.add('is-' + type);
+        }
+      }
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
         const recipeUrl = urlInput.value.trim();
+
+        if (!recipeUrl || !isValidHttpUrl(recipeUrl)) {
+          setStatus('Please enter a valid recipe URL starting with http:// or https://.', 'error');
+          return;
+        }
+
+        setButtonLoading(true);
+        setStatus('Extracting recipe details from the page...', 'loading');
 
         try {
           const response = await fetch('/extract-recipe', {
@@ -153,32 +149,39 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ recipeUrl })
           });
-
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
 
           if (!response.ok) {
-            loadingMessage.textContent = data.error || 'Error extracting recipe. Please check the URL and try again.';
-            loadingMessage.style.backgroundColor = '#fee';
-            loadingMessage.style.color = '#c00';
+            setStatus(data.error || 'Could not extract this recipe. Please try another URL.', 'error');
+            setButtonLoading(false);
             return;
           }
 
-          // Only store and redirect if we have a successful response
+          if (!data.recipe || !data.recipe.id) {
+            setStatus('Recipe extraction succeeded, but no recipe data was returned.', 'error');
+            setButtonLoading(false);
+            return;
+          }
+
           const recipeToStore = {
             id: data.recipe.id,
             title: data.recipe.title,
             introduction: data.recipe.introduction,
             ingredients: data.recipe.ingredients,
-            instructions: data.recipe.instructions
+            instructions: data.recipe.instructions,
+            audio_filename: data.recipe.audio_filename || null,
+            audio_url: data.recipe.audio_url || null
           };
 
           sessionStorage.setItem('extractedRecipe', JSON.stringify(recipeToStore));
-          window.location.href = '/result';
+          setStatus('Recipe ready. Opening your recipe workspace...', 'success');
+          window.setTimeout(() => {
+            window.location.href = '/result';
+          }, 450);
         } catch (error) {
-          console.error('Error:', error);
-          loadingMessage.textContent = 'An error occurred. Please try again.';
-          loadingMessage.style.backgroundColor = '#fee';
-          loadingMessage.style.color = '#c00';
+          console.error('Error extracting recipe:', error);
+          setStatus('An unexpected error occurred. Please try again in a moment.', 'error');
+          setButtonLoading(false);
         }
       });
     });

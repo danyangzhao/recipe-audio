@@ -9,150 +9,297 @@
 <body>
     <div class="container">
         <nav class="navigation">
-            <a href="{{ url_for('index') }}" class="btn back-btn">← Back to Home</a>
+            <a href="{{ url_for('index') }}" class="btn btn-secondary back-btn">← Back to Home</a>
         </nav>
 
-        <div id="recipe-container">
+        <div class="page-shell recipe-layout">
             {% if recipe %}
-                <h1>{{ recipe.title }}</h1>
-                
-                {% if recipe.introduction %}
-                    <h2>Introduction</h2>
-                    <div class="introduction">
-                        <p>{{ recipe.introduction }}</p>
+                <header class="recipe-header">
+                    <h1 class="recipe-title">{{ recipe.title or "Untitled Recipe" }}</h1>
+                    <div class="recipe-meta">
+                        {% if recipe.ingredients %}
+                            <span class="meta-chip">{{ recipe.ingredients|length }} ingredients</span>
+                        {% endif %}
+                        {% if recipe.instructions %}
+                            <span class="meta-chip">{{ recipe.instructions|length }} steps</span>
+                        {% endif %}
+                        {% if recipe.audio_filename %}
+                            <span class="meta-chip meta-chip-success">Audio ready</span>
+                        {% endif %}
+                        {% if not recipe.ingredients and not recipe.instructions and not recipe.audio_filename %}
+                            <span class="meta-chip">Recipe imported</span>
+                        {% endif %}
                     </div>
-                {% endif %}
-                
-                {% if recipe.ingredients %}
-                    <h2>Ingredients</h2>
-                    <ul class="ingredients-list">
-                        {% for ingredient in recipe.ingredients %}
-                            <li>
-                                <span class="quantity">{{ ingredient.quantity }}</span>
-                                <span class="item">{{ ingredient.item }}</span>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                {% endif %}
-                
-                {% if recipe.instructions %}
-                    <h2>Instructions</h2>
-                    <ol class="steps-list">
-                        {% for step in recipe.instructions %}
-                            <li>{{ step }}</li>
-                        {% endfor %}
-                    </ol>
-                {% endif %}
-            {% endif %}
-        </div>
+                </header>
 
-        <div class="button-container" style="margin-top: 2rem; text-align: center;">
-            {% if not recipe.audio_filename %}
-                <button id="generate-audio" class="btn">Generate Audio</button>
-            {% endif %}
-        </div>
+                <div id="recipe-container" class="recipe-content">
+                    {% if recipe.introduction %}
+                        <section class="section-card">
+                            <h2>Introduction</h2>
+                            <p class="introduction">{{ recipe.introduction }}</p>
+                        </section>
+                    {% endif %}
 
-        {% if recipe.audio_filename %}
-            <div id="audio-container" style="display: block; margin-top: 2rem;">
-                <!-- Debug info -->
-                <div style="display: none;">
-                    <p>Audio filename: {{ recipe.audio_filename }}</p>
-                    <p>Audio URL: {{ recipe.audio_url }}</p>
+                    {% if recipe.ingredients %}
+                        <section class="section-card">
+                            <h2>Ingredients</h2>
+                            <ul class="ingredients-list">
+                                {% for ingredient in recipe.ingredients %}
+                                    <li>
+                                        {% if ingredient is mapping %}
+                                            {% set ingredient_quantity = ingredient.quantity if ingredient.quantity is defined else (ingredient.amount if ingredient.amount is defined else '') %}
+                                            {% set ingredient_item = ingredient.item if ingredient.item is defined else (ingredient.text if ingredient.text is defined else (ingredient.name if ingredient.name is defined else '')) %}
+                                            <span class="quantity">{{ ingredient_quantity }}</span>
+                                            <span class="item">{{ ingredient_item }}</span>
+                                        {% else %}
+                                            <span class="quantity"></span>
+                                            <span class="item">{{ ingredient }}</span>
+                                        {% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </section>
+                    {% endif %}
+
+                    {% if recipe.instructions %}
+                        <section class="section-card">
+                            <h2>Instructions</h2>
+                            <ol class="steps-list">
+                                {% for step in recipe.instructions %}
+                                    <li>
+                                        {% if step is mapping %}
+                                            {{ step.text if step.text is defined else (step.instruction if step.instruction is defined else (step.name if step.name is defined else '')) }}
+                                        {% else %}
+                                            {{ step }}
+                                        {% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ol>
+                        </section>
+                    {% endif %}
+
+                    {% if not recipe.introduction and not recipe.ingredients and not recipe.instructions %}
+                        <div class="empty-state">This recipe does not have formatted details to display yet.</div>
+                    {% endif %}
                 </div>
-                <audio controls style="width: 100%;">
-                    <source src="{{ recipe.audio_url }}" type="audio/mpeg">
-                    Your browser does not support the audio element.
-                </audio>
-            </div>
-        {% else %}
-            <div id="audio-container" style="display: none;"></div>
-            <div id="audio-status" style="display: none;"></div>
-        {% endif %}
+
+                <section class="action-panel">
+                    <div class="button-row">
+                        {% if not recipe.audio_filename %}
+                            <button id="generate-audio" class="btn btn-primary">
+                                <span class="btn-text">Generate Audio</span>
+                            </button>
+                        {% else %}
+                            <span class="status-pill">Audio is available below</span>
+                        {% endif %}
+
+                        {% if recipe.audio_url %}
+                            <a id="download-audio" class="btn btn-secondary" href="{{ recipe.audio_url }}" download>Download Audio</a>
+                        {% else %}
+                            <a id="download-audio" class="btn btn-secondary" href="#" download hidden>Download Audio</a>
+                        {% endif %}
+                    </div>
+                    <div id="audio-status" class="status-message" role="status" aria-live="polite" hidden></div>
+                </section>
+
+                {% if recipe.audio_filename and recipe.audio_url %}
+                    <div id="audio-container" class="audio-container">
+                        <div class="audio-card">
+                            <h3>Listen to your recipe</h3>
+                            <audio controls preload="none" class="audio-player">
+                                <source src="{{ recipe.audio_url }}" type="audio/mpeg">
+                                Your browser does not support the audio element.
+                            </audio>
+                        </div>
+                    </div>
+                {% else %}
+                    <div id="audio-container" class="audio-container" hidden></div>
+                {% endif %}
+            {% else %}
+                <div class="empty-state">
+                    <p>Recipe not found.</p>
+                    <a href="{{ url_for('index') }}">Return home and try another recipe.</a>
+                </div>
+            {% endif %}
+        </div>
     </div>
 
+    {% if recipe %}
+    <script id="recipe-data" type="application/json">{{ recipe | tojson }}</script>
+    {% endif %}
     <script>
-        {% if not recipe.audio_filename %}
-        document.getElementById('generate-audio').addEventListener('click', async () => {
+        document.addEventListener('DOMContentLoaded', function() {
+            const recipeDataNode = document.getElementById('recipe-data');
+            const generateAudioBtn = document.getElementById('generate-audio');
+            const audioContainer = document.getElementById('audio-container');
+            const audioStatus = document.getElementById('audio-status');
+            const downloadAudioLink = document.getElementById('download-audio');
+            const defaultButtonLabel = 'Generate Audio';
+
+            if (!recipeDataNode || !generateAudioBtn) {
+                return;
+            }
+
+            let recipe;
             try {
-                const generateAudioBtn = document.getElementById('generate-audio');
-                generateAudioBtn.disabled = true;
-                generateAudioBtn.textContent = 'Generating Audio...';
+                recipe = JSON.parse(recipeDataNode.textContent);
+            } catch (error) {
+                console.error('Could not parse recipe data:', error);
+                return;
+            }
 
-                // Build audio text
-                let audioText = '';
-                {% if recipe.title %}
-                    audioText += 'Recipe: {{ recipe.title }}\n\n';
-                {% endif %}
-                
-                {% if recipe.introduction %}
-                    audioText += '{{ recipe.introduction }}\n\n';
-                {% endif %}
-                
-                {% if recipe.ingredients %}
-                    audioText += 'Ingredients:\n';
-                    {% for ingredient in recipe.ingredients %}
-                        audioText += '{{ ingredient.quantity }} {{ ingredient.item }}\n';
-                    {% endfor %}
-                    audioText += '\n';
-                {% endif %}
-                
-                {% if recipe.instructions %}
-                    audioText += 'Instructions:\n';
-                    {% for step in recipe.instructions %}
-                        audioText += 'Step {{ loop.index }}: {{ step }}\n';
-                    {% endfor %}
-                {% endif %}
+            function normalizeText(value) {
+                if (typeof value !== 'string') {
+                    return '';
+                }
+                return value.trim();
+            }
 
-                const response = await fetch('/generate-audio', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        text: audioText,
-                        recipeId: {{ recipe.id }}
-                    })
-                });
+            function ingredientToText(ingredient) {
+                if (typeof ingredient === 'string') {
+                    return ingredient.trim();
+                }
+                if (!ingredient || typeof ingredient !== 'object') {
+                    return '';
+                }
+                const quantity = normalizeText(String(ingredient.quantity || ingredient.amount || ''));
+                const item = normalizeText(String(ingredient.item || ingredient.text || ingredient.name || ''));
+                return [quantity, item].filter(Boolean).join(' ').trim();
+            }
 
-                if (!response.ok) {
-                    throw new Error('Failed to generate audio');
+            function stepToText(step) {
+                if (typeof step === 'string') {
+                    return step.trim();
+                }
+                if (!step || typeof step !== 'object') {
+                    return '';
+                }
+                return normalizeText(String(step.text || step.instruction || step.name || ''));
+            }
+
+            function setAudioButtonLoading(isLoading) {
+                generateAudioBtn.disabled = isLoading;
+                if (isLoading) {
+                    generateAudioBtn.innerHTML = '<span class="loading-spinner" aria-hidden="true"></span><span class="btn-text">Generating...</span>';
+                    return;
+                }
+                generateAudioBtn.innerHTML = '<span class="btn-text">' + defaultButtonLabel + '</span>';
+            }
+
+            function setStatus(message, type) {
+                audioStatus.hidden = false;
+                audioStatus.textContent = message;
+                audioStatus.className = 'status-message';
+                if (type) {
+                    audioStatus.classList.add('is-' + type);
+                }
+            }
+
+            function renderAudioPlayer(audioUrl) {
+                audioContainer.hidden = false;
+                audioContainer.innerHTML = '';
+
+                const card = document.createElement('div');
+                card.className = 'audio-card';
+
+                const heading = document.createElement('h3');
+                heading.textContent = 'Listen to your recipe';
+                card.appendChild(heading);
+
+                const audio = document.createElement('audio');
+                audio.controls = true;
+                audio.preload = 'none';
+                audio.className = 'audio-player';
+
+                const source = document.createElement('source');
+                source.src = audioUrl;
+                source.type = 'audio/mpeg';
+                audio.appendChild(source);
+                audio.appendChild(document.createTextNode('Your browser does not support the audio element.'));
+
+                card.appendChild(audio);
+                audioContainer.appendChild(card);
+
+                if (downloadAudioLink) {
+                    downloadAudioLink.href = audioUrl;
+                    downloadAudioLink.hidden = false;
+                }
+            }
+
+            function buildAudioText(recipePayload) {
+                const lines = [];
+                const title = normalizeText(recipePayload.title);
+                const introduction = normalizeText(recipePayload.introduction);
+                const ingredients = Array.isArray(recipePayload.ingredients) ? recipePayload.ingredients : [];
+                const steps = Array.isArray(recipePayload.instructions) ? recipePayload.instructions : [];
+
+                if (title) {
+                    lines.push('Recipe: ' + title, '');
+                }
+                if (introduction) {
+                    lines.push(introduction, '');
+                }
+                if (ingredients.length > 0) {
+                    lines.push('Ingredients:');
+                    ingredients.forEach((ingredient) => {
+                        const ingredientLine = ingredientToText(ingredient);
+                        if (ingredientLine) {
+                            lines.push(ingredientLine);
+                        }
+                    });
+                    lines.push('');
+                }
+                if (steps.length > 0) {
+                    lines.push('Instructions:');
+                    steps.forEach((step, index) => {
+                        const stepText = stepToText(step);
+                        if (stepText) {
+                            lines.push('Step ' + (index + 1) + ': ' + stepText);
+                        }
+                    });
                 }
 
-                const data = await response.json();
-
-                // Show audio status and player
-                const audioStatus = document.getElementById('audio-status');
-                audioStatus.style.display = 'block';
-                audioStatus.textContent = 'Audio Ready';
-
-                // Display audio player with S3 URL
-                const audioContainer = document.getElementById('audio-container');
-                audioContainer.style.display = 'block';
-                audioContainer.innerHTML = `
-                    <audio controls style="width: 100%; margin-top: 1rem;">
-                        <source src="${data.audio_url}" type="audio/mpeg">
-                        Your browser does not support the audio element.
-                    </audio>
-                `;
-
-                // Re-enable button
-                generateAudioBtn.textContent = 'Generate Audio';
-                generateAudioBtn.disabled = false;
-
-            } catch (error) {
-                console.error('Error generating audio:', error);
-                const generateAudioBtn = document.getElementById('generate-audio');
-                generateAudioBtn.textContent = 'Generate Audio';
-                generateAudioBtn.disabled = false;
-                
-                const audioStatus = document.getElementById('audio-status');
-                audioStatus.style.display = 'block';
-                audioStatus.textContent = 'Error generating audio. Please try again.';
-                audioStatus.style.backgroundColor = '#fee';
-                audioStatus.style.color = '#c00';
+                return lines.join('\n').trim();
             }
+
+            generateAudioBtn.addEventListener('click', async () => {
+                const audioText = buildAudioText(recipe);
+                if (!audioText) {
+                    setStatus('This recipe does not have enough content for audio generation yet.', 'error');
+                    return;
+                }
+
+                try {
+                    setAudioButtonLoading(true);
+                    setStatus('Generating audio narration. This can take up to a minute...', 'loading');
+
+                    const response = await fetch('/generate-audio', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            text: audioText,
+                            recipeId: recipe.id || null
+                        })
+                    });
+                    const data = await response.json().catch(() => ({}));
+
+                    if (!response.ok || !data.audio_url) {
+                        throw new Error(data.error || 'Failed to generate audio');
+                    }
+
+                    renderAudioPlayer(data.audio_url);
+                    setAudioButtonLoading(false);
+                    generateAudioBtn.hidden = true;
+                    setStatus('Audio is ready to play.', 'success');
+                } catch (error) {
+                    console.error('Error generating audio:', error);
+                    setAudioButtonLoading(false);
+                    setStatus('Error generating audio. Please try again.', 'error');
+                }
+            });
         });
-        {% endif %}
     </script>
 </body>
 </html> 

@@ -77,6 +77,27 @@ class ProductionErrorAlertTests(unittest.TestCase):
 
         smtp_mock.assert_not_called()
 
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("error_alerts.smtplib.SMTP")
+    def test_invalid_smtp_port_falls_back_to_default(self, smtp_class_mock):
+        os.environ.update(
+            {
+                "PYTHON_ENV": "production",
+                "ERROR_ALERT_RECIPIENT_EMAIL": "alerts@example.com",
+                "ERROR_ALERT_SENDER_EMAIL": "no-reply@example.com",
+                "SMTP_HOST": "smtp.example.com",
+                "SMTP_PORT": "not-a-number",
+            }
+        )
+
+        send_production_error_email(
+            operation="extract_recipe",
+            recipe_url="https://example.com/recipe",
+            error_message="scrape failed",
+        )
+
+        smtp_class_mock.assert_called_once_with("smtp.example.com", 587, timeout=10)
+
 
 if __name__ == "__main__":
     unittest.main()

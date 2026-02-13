@@ -75,7 +75,12 @@ def send_production_error_email(
     sender = os.getenv("ERROR_ALERT_SENDER_EMAIL") or os.getenv("SMTP_USERNAME")
     smtp_host = os.getenv("SMTP_HOST")
     use_ssl = _env_flag("SMTP_USE_SSL", False)
-    smtp_port = int(os.getenv("SMTP_PORT", "465" if use_ssl else "587"))
+    smtp_port_raw = os.getenv("SMTP_PORT", "465" if use_ssl else "587")
+    try:
+        smtp_port = int(smtp_port_raw)
+    except (TypeError, ValueError):
+        smtp_port = 465 if use_ssl else 587
+        print(f"Invalid SMTP_PORT value '{smtp_port_raw}'. Falling back to {smtp_port}.")
     smtp_username = os.getenv("SMTP_USERNAME")
     smtp_password = os.getenv("SMTP_PASSWORD")
     use_tls = _env_flag("SMTP_USE_TLS", True)

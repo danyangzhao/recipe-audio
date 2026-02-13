@@ -109,12 +109,15 @@ def notify_route_error(operation: str, recipe_url: str, error_message: str, reci
     """
     Send production-only error email alerts for extraction/audio failures.
     """
-    send_production_error_email(
-        operation=operation,
-        recipe_url=recipe_url,
-        error_message=error_message,
-        recipe_id=recipe_id,
-    )
+    try:
+        send_production_error_email(
+            operation=operation,
+            recipe_url=recipe_url,
+            error_message=error_message,
+            recipe_id=recipe_id,
+        )
+    except Exception as exc:
+        print(f"Error while sending production error email ({operation}): {exc}")
 
 
 def resolve_recipe_url(recipe_id, fallback_url: str = "") -> str:

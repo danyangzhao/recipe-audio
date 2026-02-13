@@ -65,8 +65,8 @@
         if (!ingredient || typeof ingredient !== 'object') {
           return { quantity: '', item: '' };
         }
-        const quantity = normalizeText(String(ingredient.quantity || ''));
-        const item = normalizeText(String(ingredient.item || ''));
+        const quantity = normalizeText(String(ingredient.quantity || ingredient.amount || ''));
+        const item = normalizeText(String(ingredient.item || ingredient.text || ingredient.name || ''));
         if (!item && quantity) {
           return { quantity: '', item: quantity };
         }
@@ -76,6 +76,16 @@
       function ingredientToText(ingredient) {
         const parts = ingredientToParts(ingredient);
         return [parts.quantity, parts.item].filter(Boolean).join(' ').trim();
+      }
+
+      function stepToText(step) {
+        if (typeof step === 'string') {
+          return step.trim();
+        }
+        if (!step || typeof step !== 'object') {
+          return '';
+        }
+        return normalizeText(String(step.text || step.instruction || step.name || ''));
       }
 
       function setAudioButtonLoading(isLoading) {
@@ -201,7 +211,7 @@
           const orderedList = document.createElement('ol');
           orderedList.className = 'steps-list';
           recipePayload.instructions.forEach((step) => {
-            const stepText = normalizeText(String(step || ''));
+            const stepText = stepToText(step);
             if (!stepText) {
               return;
             }
@@ -278,7 +288,7 @@
         if (steps.length > 0) {
           lines.push('Instructions:');
           steps.forEach((step, index) => {
-            const stepText = normalizeText(String(step || ''));
+            const stepText = stepToText(step);
             if (stepText) {
               lines.push('Step ' + (index + 1) + ': ' + stepText);
             }

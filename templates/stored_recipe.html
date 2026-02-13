@@ -47,8 +47,10 @@
                                 {% for ingredient in recipe.ingredients %}
                                     <li>
                                         {% if ingredient is mapping %}
-                                            <span class="quantity">{{ ingredient.quantity or '' }}</span>
-                                            <span class="item">{{ ingredient.item or '' }}</span>
+                                            {% set ingredient_quantity = ingredient.quantity if ingredient.quantity is defined else (ingredient.amount if ingredient.amount is defined else '') %}
+                                            {% set ingredient_item = ingredient.item if ingredient.item is defined else (ingredient.text if ingredient.text is defined else (ingredient.name if ingredient.name is defined else '')) %}
+                                            <span class="quantity">{{ ingredient_quantity }}</span>
+                                            <span class="item">{{ ingredient_item }}</span>
                                         {% else %}
                                             <span class="quantity"></span>
                                             <span class="item">{{ ingredient }}</span>
@@ -64,7 +66,13 @@
                             <h2>Instructions</h2>
                             <ol class="steps-list">
                                 {% for step in recipe.instructions %}
-                                    <li>{{ step }}</li>
+                                    <li>
+                                        {% if step is mapping %}
+                                            {{ step.text if step.text is defined else (step.instruction if step.instruction is defined else (step.name if step.name is defined else '')) }}
+                                        {% else %}
+                                            {{ step }}
+                                        {% endif %}
+                                    </li>
                                 {% endfor %}
                             </ol>
                         </section>
@@ -154,9 +162,19 @@
                 if (!ingredient || typeof ingredient !== 'object') {
                     return '';
                 }
-                const quantity = normalizeText(String(ingredient.quantity || ''));
-                const item = normalizeText(String(ingredient.item || ''));
+                const quantity = normalizeText(String(ingredient.quantity || ingredient.amount || ''));
+                const item = normalizeText(String(ingredient.item || ingredient.text || ingredient.name || ''));
                 return [quantity, item].filter(Boolean).join(' ').trim();
+            }
+
+            function stepToText(step) {
+                if (typeof step === 'string') {
+                    return step.trim();
+                }
+                if (!step || typeof step !== 'object') {
+                    return '';
+                }
+                return normalizeText(String(step.text || step.instruction || step.name || ''));
             }
 
             function setAudioButtonLoading(isLoading) {
@@ -234,7 +252,7 @@
                 if (steps.length > 0) {
                     lines.push('Instructions:');
                     steps.forEach((step, index) => {
-                        const stepText = normalizeText(String(step || ''));
+                        const stepText = stepToText(step);
                         if (stepText) {
                             lines.push('Step ' + (index + 1) + ': ' + stepText);
                         }

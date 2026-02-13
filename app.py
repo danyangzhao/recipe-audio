@@ -8,6 +8,7 @@ from storage import AudioStorage
 
 import os
 import time
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from openai import OpenAI
 from sqlalchemy.exc import IntegrityError
@@ -86,6 +87,22 @@ def is_scrape_failure(raw_text: str) -> bool:
     )
     return any(marker in normalized for marker in failure_markers)
 
+def derive_source_name(url: str) -> str:
+    """
+    Convert a recipe URL into a user-friendly source label.
+    """
+    if not isinstance(url, str) or not url.strip():
+        return ""
+
+    try:
+        hostname = urlparse(url).netloc.lower().strip()
+    except Exception:
+        return ""
+
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
+    return hostname
+
 @app.route('/health')
 def health():
     """Health check endpoint for Railway"""
@@ -145,6 +162,8 @@ def view_recipe(recipe_id):
         "ingredients": recipe.ingredients,
         "instructions": recipe.instructions,
         "id": recipe.id,
+        "url": recipe.url,
+        "source_name": derive_source_name(recipe.url),
         "audio_filename": recipe.audio_filename,
         "audio_url": recipe.audio_url,
         "views": recipe.views
@@ -175,6 +194,8 @@ def extract_recipe():
                 'introduction': existing_recipe.introduction,
                 'ingredients': existing_recipe.ingredients,
                 'instructions': existing_recipe.instructions,
+                'url': existing_recipe.url,
+                'source_name': derive_source_name(existing_recipe.url),
                 'audio_filename': existing_recipe.audio_filename,
                 'audio_url': existing_recipe.audio_url,
             }
@@ -215,6 +236,8 @@ def extract_recipe():
         
         # Include the ID in the response
         structured_recipe['id'] = new_recipe.id
+        structured_recipe['url'] = recipe_url
+        structured_recipe['source_name'] = derive_source_name(recipe_url)
         
         return jsonify({
             'success': True,
@@ -232,6 +255,8 @@ def extract_recipe():
                 'introduction': existing_recipe.introduction,
                 'ingredients': existing_recipe.ingredients,
                 'instructions': existing_recipe.instructions,
+                'url': existing_recipe.url,
+                'source_name': derive_source_name(existing_recipe.url),
                 'audio_filename': existing_recipe.audio_filename,
                 'audio_url': existing_recipe.audio_url,
             }

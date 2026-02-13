@@ -16,6 +16,7 @@
     <div class="page-shell recipe-layout">
       <header id="recipe-header" class="recipe-header" hidden>
         <h1 id="recipe-title" class="recipe-title"></h1>
+        <p id="recipe-source" class="recipe-source" hidden></p>
         <div id="recipe-meta" class="recipe-meta"></div>
       </header>
 
@@ -40,6 +41,7 @@
       const recipeContainer = document.getElementById('recipe-container');
       const recipeHeader = document.getElementById('recipe-header');
       const recipeTitle = document.getElementById('recipe-title');
+      const recipeSource = document.getElementById('recipe-source');
       const recipeMeta = document.getElementById('recipe-meta');
       const generateAudioBtn = document.getElementById('generate-audio');
       const downloadAudioLink = document.getElementById('download-audio');
@@ -86,6 +88,31 @@
           return '';
         }
         return normalizeText(String(step.text || step.instruction || step.name || ''));
+      }
+
+      function getSourceDetails(recipePayload) {
+        const sourceUrl = normalizeText(recipePayload.url);
+        const providedSourceName = normalizeText(recipePayload.source_name);
+        if (!sourceUrl) {
+          return null;
+        }
+
+        try {
+          const parsed = new URL(sourceUrl);
+          let hostname = parsed.hostname.toLowerCase();
+          if (hostname.startsWith('www.')) {
+            hostname = hostname.slice(4);
+          }
+          return {
+            url: sourceUrl,
+            name: providedSourceName || hostname || 'Original recipe source'
+          };
+        } catch (error) {
+          return {
+            url: sourceUrl,
+            name: providedSourceName || 'Original recipe source'
+          };
+        }
       }
 
       function setAudioButtonLoading(isLoading) {
@@ -168,6 +195,30 @@
         const title = normalizeText(recipePayload.title) || 'Untitled Recipe';
         recipeTitle.textContent = title;
         recipeHeader.hidden = false;
+        const sourceDetails = getSourceDetails(recipePayload);
+        if (sourceDetails) {
+          recipeSource.hidden = false;
+          recipeSource.innerHTML = '';
+
+          const sourceName = document.createElement('span');
+          sourceName.className = 'recipe-source-name';
+          sourceName.textContent = sourceDetails.name;
+
+          const separator = document.createTextNode(' · ');
+
+          const sourceLink = document.createElement('a');
+          sourceLink.href = sourceDetails.url;
+          sourceLink.target = '_blank';
+          sourceLink.rel = 'noopener noreferrer';
+          sourceLink.textContent = 'View original recipe';
+
+          recipeSource.appendChild(sourceName);
+          recipeSource.appendChild(separator);
+          recipeSource.appendChild(sourceLink);
+        } else {
+          recipeSource.hidden = true;
+          recipeSource.textContent = '';
+        }
         updateMeta(recipePayload);
 
         const fragment = document.createDocumentFragment();
@@ -186,19 +237,12 @@
           const list = document.createElement('ul');
           list.className = 'ingredients-list';
           recipePayload.ingredients.forEach((ingredient) => {
-            const ingredientParts = ingredientToParts(ingredient);
-            if (!ingredientParts.quantity && !ingredientParts.item) {
+            const ingredientText = ingredientToText(ingredient);
+            if (!ingredientText) {
               return;
             }
             const item = document.createElement('li');
-            const quantityNode = document.createElement('span');
-            const valueNode = document.createElement('span');
-            quantityNode.className = 'quantity';
-            valueNode.className = 'item';
-            quantityNode.textContent = ingredientParts.quantity;
-            valueNode.textContent = ingredientParts.item;
-            item.appendChild(quantityNode);
-            item.appendChild(valueNode);
+            item.textContent = ingredientText;
             list.appendChild(item);
           });
           if (list.children.length > 0) {

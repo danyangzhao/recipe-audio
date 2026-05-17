@@ -1,6 +1,6 @@
 # app.py
 from flask import Flask, request, jsonify, render_template, abort
-from scrape import scrape_recipe_page
+from scrape import scrape_recipe_page, get_last_fallback_recipe
 from enhanced_scraping import scrape_recipe_page_enhanced
 from process_recipe import parse_and_structure_recipe
 from models import db, Recipe
@@ -206,21 +206,33 @@ def extract_recipe():
 
         # 1. Scrape the webpage with fallback to enhanced scraper
         raw_text = scrape_recipe_page(recipe_url)
-        
+        # Capture the JSON-LD-derived structured recipe (if any) right after
+        # the primary scrape; this is our deterministic safety net for the LLM step.
+        fallback_structured_recipe = get_last_fallback_recipe(recipe_url)
+
         # If original scraper fails, try enhanced scraper
         if is_scrape_failure(raw_text):
             print(f"Original scraper failed, trying enhanced scraper for: {recipe_url}")
             raw_text = scrape_recipe_page_enhanced(recipe_url)
-        
+
         # Check if both scrapers failed
         if is_scrape_failure(raw_text):
             return jsonify({'error': raw_text or 'Failed to extract recipe content'}), 400
-        
-        # 2. Parse & structure with OpenAI
-        structured_recipe = parse_and_structure_recipe(raw_text)
-        
+
+        # 2. Parse & structure with OpenAI (fallback to JSON-LD if LLM fails)
+        structured_recipe = parse_and_structure_recipe(
+            raw_text,
+            fallback_structured_recipe=fallback_structured_recipe,
+        )
+
         # Validate the structured recipe has required fields
         if not structured_recipe.get('title') or not structured_recipe.get('ingredients') or not structured_recipe.get('instructions'):
+            print(
+                "Structured recipe validation failed for "
+                f"{recipe_url}; structured_recipe keys="
+                f"{list(structured_recipe.keys()) if isinstance(structured_recipe, dict) else type(structured_recipe).__name__}, "
+                f"had_fallback={bool(fallback_structured_recipe)}"
+            )
             return jsonify({'error': 'Failed to parse recipe structure properly'}), 400
 
         # 3. Only save to database if we have a valid recipe

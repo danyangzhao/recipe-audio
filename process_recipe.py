@@ -1,25 +1,72 @@
 # process_recipe.py
+import copy
 import json
-from openai import OpenAI
+import logging
 import os
-from dotenv import load_dotenv
+from typing import Any, Dict, Optional
 
-# Load environment variables first
+from dotenv import load_dotenv
+from openai import OpenAI
+
 load_dotenv()
 
-# Get API key
+logger = logging.getLogger(__name__)
+
 api_key = os.getenv('OPENAI_API_KEY')
 if not api_key:
     print("WARNING: No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
     # Don't raise error immediately - let the app start and handle it gracefully
     client = None
 else:
-    # Initialize the client with the API key
     client = OpenAI(api_key=api_key)
 
-def parse_and_structure_recipe(raw_text: str) -> dict:
+
+def _is_complete_structured_recipe(data: Any) -> bool:
+    """Return True when the dict has the minimum fields the UI requires."""
+    if not isinstance(data, dict):
+        return False
+    if not data.get('title'):
+        return False
+    ingredients = data.get('ingredients')
+    instructions = data.get('instructions')
+    return bool(ingredients) and bool(instructions)
+
+
+def _coerce_to_structured_recipe(
+    candidate: Any, fallback: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    """
+    Merge a (possibly partial) LLM response with a deterministic fallback so
+    the user always gets a usable recipe when JSON-LD is available.
+    Returns None when neither source produces a usable recipe.
+    """
+    if _is_complete_structured_recipe(candidate):
+        return candidate
+
+    if fallback and _is_complete_structured_recipe(fallback):
+        merged = copy.deepcopy(fallback)
+        if isinstance(candidate, dict):
+            for key in ('title', 'introduction', 'ingredients', 'instructions'):
+                value = candidate.get(key)
+                if value:
+                    merged[key] = value
+        return merged
+
+    return candidate if isinstance(candidate, dict) else None
+
+
+def parse_and_structure_recipe(
+    raw_text: str,
+    fallback_structured_recipe: Optional[Dict[str, Any]] = None,
+) -> dict:
     """
     Sends the raw recipe text (or JSON-LD) to OpenAI and requests a structured JSON response.
+
+    When `fallback_structured_recipe` is provided (typically built from JSON-LD
+    by the scraper), it is used as a deterministic safety net: if the LLM call
+    fails entirely, or returns a payload that is missing required fields, the
+    fallback is used (or merged with the partial LLM response) so callers
+    receive a usable recipe instead of an opaque parsing error.
     """
 
     prompt = f"""
@@ -49,15 +96,25 @@ def parse_and_structure_recipe(raw_text: str) -> dict:
     {raw_text}
     """
 
+    error_payload = {
+        "title": "Error parsing recipe",
+        "introduction": "There was an error processing this recipe.",
+        "ingredients": [],
+        "instructions": []
+    }
+
+    if client is None:
+        if _is_complete_structured_recipe(fallback_structured_recipe):
+            logger.info("OpenAI client unavailable; using JSON-LD fallback recipe.")
+            return copy.deepcopy(fallback_structured_recipe)
+        return {
+            "title": "Configuration Error",
+            "introduction": "OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable.",
+            "ingredients": [],
+            "instructions": []
+        }
+
     try:
-        if client is None:
-            return {
-                "title": "Configuration Error",
-                "introduction": "OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable.",
-                "ingredients": [],
-                "instructions": []
-            }
-        
         response = client.chat.completions.create(
             model="gpt-4o-mini",  # Cost-effective model, works great for structured JSON parsing
             messages=[{"role": "user", "content": prompt}],
@@ -65,19 +122,29 @@ def parse_and_structure_recipe(raw_text: str) -> dict:
             temperature=0.1  # Lower temperature for more consistent parsing
         )
 
-        # Extract the assistant's message - no need to clean JSON formatting
         ai_text = response.choices[0].message.content.strip()
         print("AI Response:", ai_text)
 
-        # Parse JSON response
         recipe_data = json.loads(ai_text)
         print("Structured recipe data:", recipe_data)  # Debug log
-        return recipe_data
+
+        merged = _coerce_to_structured_recipe(recipe_data, fallback_structured_recipe)
+        if _is_complete_structured_recipe(merged):
+            return merged
+
+        logger.warning(
+            "LLM response was missing required fields; "
+            "falling back to JSON-LD recipe data if available."
+        )
+        if _is_complete_structured_recipe(fallback_structured_recipe):
+            return copy.deepcopy(fallback_structured_recipe)
+
+        return merged if isinstance(merged, dict) else error_payload
+
     except Exception as e:
+        logger.exception(f"Error in parse_and_structure_recipe: {e}")
         print(f"Error in parse_and_structure_recipe: {str(e)}")
-        return {
-            "title": "Error parsing recipe",
-            "introduction": "There was an error processing this recipe.",
-            "ingredients": [],
-            "instructions": []
-        }
+        if _is_complete_structured_recipe(fallback_structured_recipe):
+            logger.info("Using JSON-LD fallback recipe after LLM failure.")
+            return copy.deepcopy(fallback_structured_recipe)
+        return error_payload

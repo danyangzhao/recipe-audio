@@ -149,6 +149,110 @@ def _extract_recipe_ingredients(structured_data: Dict[str, Any]) -> list[str]:
 
     return ingredients
 
+# Common cooking measurement tokens used to split free-form ingredient strings
+# into a (quantity, item) pair when no structured quantity is provided.
+_QUANTITY_UNIT_TOKENS = (
+    "tsp", "teaspoon", "teaspoons",
+    "tbsp", "tablespoon", "tablespoons", "tbap",
+    "cup", "cups",
+    "oz", "ounce", "ounces",
+    "lb", "lbs", "pound", "pounds",
+    "g", "gram", "grams",
+    "kg", "kilogram", "kilograms",
+    "ml", "milliliter", "milliliters",
+    "l", "liter", "liters", "litre", "litres",
+    "qt", "quart", "quarts",
+    "pt", "pint", "pints",
+    "gal", "gallon", "gallons",
+    "clove", "cloves",
+    "pinch", "pinches",
+    "dash", "dashes",
+    "stick", "sticks",
+    "slice", "slices",
+    "can", "cans",
+    "package", "packages", "pkg",
+    "bunch", "bunches",
+    "sprig", "sprigs",
+    "head", "heads",
+    "piece", "pieces",
+)
+_QUANTITY_NUMBER_PATTERN = (
+    # NOTE: order matters — alternation is greedy in left-to-right order, so
+    # the most specific patterns must come first.
+    r"\d+\s+\d+\s*/\s*\d+"       # 1 1/2 (mixed fraction)
+    r"|\d+\s*/\s*\d+"             # 1/2
+    r"|\d+(?:[.,]\d+)?"           # 1, 1.5, 1,5
+    r"|[¼½¾⅓⅔⅛⅜⅝⅞]"               # vulgar fractions
+)
+_QUANTITY_PATTERN = re.compile(
+    r"^\s*((?:" + _QUANTITY_NUMBER_PATTERN + r")(?:\s*-\s*(?:" + _QUANTITY_NUMBER_PATTERN + r"))?)"
+    r"\s*(" + r"|".join(_QUANTITY_UNIT_TOKENS) + r")?\b"
+    r"\s*(.*)$",
+    re.IGNORECASE,
+)
+
+
+def _split_ingredient_quantity(ingredient_text: str) -> Dict[str, str]:
+    """
+    Best-effort split of a raw ingredient string into a quantity / item pair.
+    Falls back to leaving quantity empty and item set to the full string when
+    no numeric prefix is detected. This is intentionally conservative; it is
+    used as a deterministic fallback when the LLM cannot run.
+    """
+    text = _normalize_structured_text(ingredient_text)
+    if not text:
+        return {"quantity": "", "item": ""}
+
+    match = _QUANTITY_PATTERN.match(text)
+    if not match:
+        return {"quantity": "", "item": text}
+
+    number, unit, rest = match.group(1), match.group(2) or "", match.group(3) or ""
+    quantity_parts = [part for part in (number.strip(), unit.strip()) if part]
+    quantity = " ".join(quantity_parts).strip()
+    item = rest.strip(" ,;:-")
+
+    if not item:
+        # If we matched only a number/unit with no item, treat the whole text
+        # as the item so we never produce a row with no human-readable label.
+        return {"quantity": "", "item": text}
+
+    return {"quantity": quantity, "item": item}
+
+
+def build_structured_recipe_from_jsonld(structured_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Convert a schema.org Recipe JSON-LD object into the same dict shape
+    the LLM is asked to produce: {title, introduction, ingredients, instructions}.
+
+    Returns None if the structured data does not contain enough information
+    (must have at least one ingredient and one instruction step).
+    """
+    if not isinstance(structured_data, dict):
+        return None
+
+    ingredients_raw = _extract_recipe_ingredients(structured_data)
+    instructions = _extract_recipe_instructions(structured_data)
+    if not ingredients_raw or not instructions:
+        return None
+
+    title = _normalize_structured_text(structured_data.get('name', ''))
+    description = _normalize_structured_text(structured_data.get('description', ''))
+
+    ingredients = [_split_ingredient_quantity(item) for item in ingredients_raw]
+    ingredients = [ing for ing in ingredients if ing.get('item')]
+
+    if not ingredients:
+        return None
+
+    return {
+        "title": title or "Recipe",
+        "introduction": description,
+        "ingredients": ingredients,
+        "instructions": instructions,
+    }
+
+
 def _extract_recipe_instructions(structured_data: Dict[str, Any]) -> list[str]:
     """Extract flattened instruction steps from structured recipe data."""
     raw_instructions = structured_data.get('recipeInstructions', [])
@@ -606,15 +710,100 @@ def scrape_with_selenium(url: str, debug_html: bool = False) -> str:
             print("\n=== END DEBUG ===\n")
         
         soup = BeautifulSoup(html, "html.parser")
+        fallback = _build_fallback_from_soup(soup)
+        _record_fallback(url, fallback)
         return extract_recipe_content(soup, url)
     except Exception as e:
         logger.error(f"Error with Selenium scraping: {str(e)}")
         return ""
 
+def _build_fallback_from_soup(soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
+    """Return a structured fallback recipe (LLM-shaped) from the soup if JSON-LD provides one."""
+    try:
+        structured_data = get_structured_data(soup)
+        if not structured_data:
+            return None
+        return build_structured_recipe_from_jsonld(structured_data)
+    except Exception as e:
+        logger.debug(f"Could not build structured fallback: {e}")
+        return None
+
+
+def scrape_recipe_page_with_metadata(
+    url: str, max_retries: int = 3, debug: bool = False
+) -> Dict[str, Any]:
+    """
+    Scrapes a recipe webpage. Returns a dict containing the raw text content
+    and, when available, a structured fallback recipe derived directly from
+    the page's JSON-LD. The fallback can be used by downstream parsers when
+    the LLM step is unavailable or returns an incomplete payload.
+
+    Returned dict shape:
+        {
+            "raw_text": str,
+            "fallback_structured_recipe": Optional[
+                {"title": str, "introduction": str,
+                 "ingredients": [{"quantity": str, "item": str}, ...],
+                 "instructions": [str, ...]}
+            ],
+        }
+    """
+    raw_text = scrape_recipe_page(url, max_retries=max_retries, debug=debug)
+    fallback = _LAST_FALLBACK_RECIPE.get(url)
+    return {
+        "raw_text": raw_text,
+        "fallback_structured_recipe": fallback,
+    }
+
+
+# Per-thread cache for the most recently extracted JSON-LD fallback recipe.
+# Each request thread (gunicorn `gthread` workers) gets its own cache so that
+# concurrent scrapes of different URLs cannot stomp on each other's fallback.
+# Keyed by URL so the same thread can scrape multiple URLs in sequence.
+import threading
+
+_FALLBACK_LOCAL = threading.local()
+_LAST_FALLBACK_RECIPE_MAX_ENTRIES = 32
+
+
+def _fallback_store() -> Dict[str, Optional[Dict[str, Any]]]:
+    store = getattr(_FALLBACK_LOCAL, "recipes", None)
+    if store is None:
+        store = {}
+        _FALLBACK_LOCAL.recipes = store
+    return store
+
+
+def get_last_fallback_recipe(url: str) -> Optional[Dict[str, Any]]:
+    """Return the most recently captured JSON-LD fallback recipe for a URL."""
+    return _fallback_store().get(url)
+
+
+def _record_fallback(url: str, fallback: Optional[Dict[str, Any]]) -> None:
+    """Store the structured fallback for a URL with a small bounded cache."""
+    if not url:
+        return
+    store = _fallback_store()
+    if len(store) >= _LAST_FALLBACK_RECIPE_MAX_ENTRIES and url not in store:
+        # Drop one entry to keep the cache bounded; FIFO is fine here.
+        try:
+            store.pop(next(iter(store)))
+        except StopIteration:
+            pass
+    store[url] = fallback
+
+
 def scrape_recipe_page(url: str, max_retries: int = 3, debug: bool = False) -> str:
     """
     Scrapes a recipe webpage and returns the raw text content.
+
+    As a side effect, when JSON-LD provides a complete Recipe object, a
+    structured fallback (LLM-shaped) is cached per-URL and can be retrieved
+    via `scrape_recipe_page_with_metadata` or `get_last_fallback_recipe`.
     """
+    # Reset any previous fallback for this URL so stale data is never reused.
+    _record_fallback(url, None)
+
     # Try with Selenium first (only if available and not on Heroku)
     if SELENIUM_AVAILABLE and not IS_HEROKU and not IS_PRODUCTION:
         logger.info("Attempting to scrape with Selenium")
@@ -732,9 +921,15 @@ def scrape_recipe_page(url: str, max_retries: int = 3, debug: bool = False) -> s
                 if script.get('type') != 'application/ld+json':
                     script.decompose()
 
+            # Capture a structured fallback before downstream callers run the
+            # (possibly fragile) LLM step. This is a best-effort, deterministic
+            # representation of the recipe directly from JSON-LD.
+            fallback = _build_fallback_from_soup(soup)
+            _record_fallback(url, fallback)
+
             # Extract recipe content
             result = extract_recipe_content(soup, url)
-            
+
             if result and result != "No recipe content found":
                 logger.info("Successfully extracted recipe content")
                 return result
